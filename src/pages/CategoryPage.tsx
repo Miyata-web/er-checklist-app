@@ -133,10 +133,17 @@ export default function CategoryPage({
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <div className={`${shift === 'day' ? 'bg-blue-500' : 'bg-indigo-700'} text-white px-4 py-4 flex items-center gap-3`}>
         <button onClick={onBack} className="text-white text-xl px-1">←</button>
-        <div>
+        <div className="flex-1">
           <h1 className="text-lg font-bold">{shiftLabel} カテゴリ選択</h1>
           <p className="text-xs opacity-80">{dateLabel}　チェックするカテゴリを選んでください</p>
         </div>
+        <button
+          onClick={onGoAdmin}
+          className="flex flex-col items-center gap-0.5 opacity-90 active:opacity-70"
+        >
+          <span className="text-xl">⚙️</span>
+          <span className="text-xs">管理</span>
+        </button>
       </div>
 
       <div className="flex-1 p-4 overflow-y-auto">
@@ -199,13 +206,6 @@ export default function CategoryPage({
         >
           <span className="text-xl">📋</span>
           履歴
-        </button>
-        <button
-          onClick={onGoAdmin}
-          className="flex-1 py-4 text-sm text-gray-600 font-medium flex flex-col items-center gap-1 active:bg-gray-50"
-        >
-          <span className="text-xl">⚙️</span>
-          管理
         </button>
       </div>
     </div>

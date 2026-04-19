@@ -1,115 +1,202 @@
 import { useState } from 'react';
 import type { CheckRecord } from '../types';
 
-interface Props {
+// 履歴グループ定義
+const HISTORY_GROUPS = [
+  { id: 'er-drugs', label: 'ER不足薬剤一覧',     ids: new Set(['cat-er-cart-drug1','cat-er-cart-drug2','cat-er-stock-a','cat-er-stock-b']) },
+  { id: 'er-items', label: 'ER物品',              ids: new Set(['cat-er-steel','cat-er-teisu']) },
+  { id: 'er-cart',  label: 'ER救急カート',        ids: new Set(['cat-er-cart1','cat-er-cart2']) },
+  { id: 'kate-drug',label: 'カテ室ストック薬',    ids: new Set(['cat-stock1','cat-stock2','cat-karte-drug']) },
+  { id: 'kate-eq',  label: 'カテ室救急カート物品', ids: new Set(['cat-karte-equip']) },
+];
+
+const GROUPED_IDS = new Set(HISTORY_GROUPS.flatMap(g => [...g.ids]));
+
+interface GroupEntry {
+  groupId: string;
+  label: string;
   records: CheckRecord[];
-  onBack: () => void;
+  hasDeficit: boolean;
+}
+
+interface OtherEntry {
+  categoryId: string;
+  categoryName: string;
+  records: CheckRecord[];
+  hasDeficit: boolean;
+}
+
+interface ShiftData {
+  groups: GroupEntry[];
+  others: OtherEntry[];
+  hasAny: boolean;
 }
 
 interface DayEntry {
   date: string;
-  day: CategoryEntry[];
-  night: CategoryEntry[];
+  day: ShiftData;
+  night: ShiftData;
 }
 
-interface CategoryEntry {
-  categoryId: string;
-  categoryName: string;
-  items: CheckRecord[];
-  hasDeficit: boolean;
+function buildShiftData(records: CheckRecord[]): ShiftData {
+  const groups: GroupEntry[] = HISTORY_GROUPS.map(g => {
+    const recs = records.filter(r => g.ids.has(r.categoryId));
+    return { groupId: g.id, label: g.label, records: recs, hasDeficit: recs.some(r => r.diff < 0) };
+  });
+
+  const otherRecs = records.filter(r => !GROUPED_IDS.has(r.categoryId));
+  const otherMap = new Map<string, OtherEntry>();
+  otherRecs.forEach(r => {
+    if (!otherMap.has(r.categoryId)) {
+      otherMap.set(r.categoryId, { categoryId: r.categoryId, categoryName: r.categoryName, records: [], hasDeficit: false });
+    }
+    const e = otherMap.get(r.categoryId)!;
+    e.records.push(r);
+    if (r.diff < 0) e.hasDeficit = true;
+  });
+
+  return {
+    groups,
+    others: Array.from(otherMap.values()),
+    hasAny: records.length > 0,
+  };
 }
 
 function groupRecords(records: CheckRecord[]): DayEntry[] {
-  const byDate = new Map<string, DayEntry>();
-
+  const byDate = new Map<string, { day: CheckRecord[]; night: CheckRecord[] }>();
   records.forEach(r => {
-    if (!byDate.has(r.date)) {
-      byDate.set(r.date, { date: r.date, day: [], night: [] });
-    }
-    const entry = byDate.get(r.date)!;
-    const list  = r.shift === 'day' ? entry.day : entry.night;
-
-    let catEntry = list.find(c => c.categoryId === r.categoryId);
-    if (!catEntry) {
-      catEntry = { categoryId: r.categoryId, categoryName: r.categoryName, items: [], hasDeficit: false };
-      list.push(catEntry);
-    }
-    catEntry.items.push(r);
-    if (r.diff < 0) catEntry.hasDeficit = true;
+    if (!byDate.has(r.date)) byDate.set(r.date, { day: [], night: [] });
+    const e = byDate.get(r.date)!;
+    (r.shift === 'day' ? e.day : e.night).push(r);
   });
-
-  return Array.from(byDate.values()).sort((a, b) => b.date.localeCompare(a.date));
+  return Array.from(byDate.entries())
+    .map(([date, { day, night }]) => ({ date, day: buildShiftData(day), night: buildShiftData(night) }))
+    .sort((a, b) => b.date.localeCompare(a.date));
 }
 
 function formatDate(dateStr: string): string {
   const d   = new Date(dateStr + 'T00:00:00');
-  const day = '日月火水木金土'[d.getDay()];
-  return `${d.getMonth() + 1}/${d.getDate()}（${day}）`;
+  const dow = '日月火水木金土'[d.getDay()];
+  return `${d.getMonth() + 1}/${d.getDate()}（${dow}）`;
 }
 
-function ShiftBlock({ label, categories, color }: {
-  label: string;
-  categories: CategoryEntry[];
-  color: 'blue' | 'indigo';
+function GroupRow({ group, isOpen, onToggle }: {
+  group: GroupEntry;
+  isOpen: boolean;
+  onToggle: () => void;
 }) {
-  const [openId, setOpenId] = useState<string | null>(null);
-  const hasAnyDeficit = categories.some(c => c.hasDeficit);
-  const allDone = categories.length > 0;
+  const hasDone = group.records.length > 0;
+  const icon  = !hasDone ? '⬜' : group.hasDeficit ? '⚠️' : '✅';
+  const color = !hasDone ? 'text-gray-300' : group.hasDeficit ? 'text-orange-500' : 'text-green-600';
+
+  // 詳細：カテゴリごとにまとめる
+  const catMap = new Map<string, { name: string; records: CheckRecord[] }>();
+  group.records.forEach(r => {
+    if (!catMap.has(r.categoryId)) catMap.set(r.categoryId, { name: r.categoryName, records: [] });
+    catMap.get(r.categoryId)!.records.push(r);
+  });
 
   return (
-    <div className="flex-1 min-w-0">
-      <div className={`text-xs font-bold mb-1 ${color === 'blue' ? 'text-blue-600' : 'text-indigo-600'}`}>
-        {label}
-        {allDone && (
-          <span className="ml-1">{hasAnyDeficit ? '⚠️' : '✅'}</span>
+    <div className="mb-2 border-b border-gray-50 pb-2 last:border-0">
+      <div className="flex items-center justify-between">
+        <span className={`text-xs font-bold ${color}`}>{icon} {group.label}</span>
+        {hasDone && (
+          <button onClick={onToggle} className="text-xs text-gray-400 underline ml-2">
+            {isOpen ? '▲ 閉じる' : '▼ 詳細'}
+          </button>
         )}
-        {!allDone && <span className="ml-1 text-gray-400">⬜ 未実施</span>}
       </div>
 
-      {categories.map(cat => (
-        <div key={cat.categoryId} className="mb-2">
-          {/* 差異のある項目のみ表示 */}
-          {cat.items
-            .filter(item => item.diff < 0)
-            .map(item => (
-              <p key={item.itemId} className="text-xs text-red-500 font-medium">
-                {item.itemName} {item.diff}
-              </p>
-            ))}
+      {/* 不足項目インライン表示 */}
+      {hasDone && !isOpen && group.hasDeficit && (
+        <div className="mt-0.5 pl-2">
+          {group.records.filter(r => r.diff < 0).map(r => (
+            <p key={r.recordId} className="text-xs text-red-500">
+              {r.itemName} <span className="font-bold">{r.diff}</span>
+            </p>
+          ))}
+        </div>
+      )}
 
-          {/* 詳細ボタン */}
-          <button
-            onClick={() => setOpenId(openId === cat.categoryId ? null : cat.categoryId)}
-            className="text-xs text-gray-400 underline mt-1"
-          >
-            {openId === cat.categoryId ? '▲ 閉じる' : '▼ 詳細'}
-          </button>
-
-          {openId === cat.categoryId && (
-            <div className="mt-2 bg-gray-50 rounded-xl p-2">
-              <p className="text-xs font-bold text-gray-600 mb-1">{cat.categoryName}</p>
-              {cat.items.map(item => (
-                <div key={item.itemId} className="flex justify-between text-xs py-0.5">
-                  <span className="text-gray-600">{item.itemName}</span>
-                  <span className={item.diff < 0 ? 'text-red-500 font-bold' : 'text-gray-500'}>
-                    {item.inputValue} / {item.standardStock}
-                    {item.diff < 0 && <span className="ml-1">({item.diff})</span>}
+      {/* 詳細展開 */}
+      {isOpen && (
+        <div className="mt-1 bg-gray-50 rounded-xl p-2 space-y-2">
+          {Array.from(catMap.values()).map(cat => (
+            <div key={cat.name}>
+              <p className="text-xs font-bold text-gray-500 mb-0.5">{cat.name}</p>
+              {cat.records.map(r => (
+                <div key={r.recordId} className="flex justify-between text-xs py-0.5">
+                  <span className="text-gray-600 mr-2 truncate">{r.itemName}</span>
+                  <span className={`shrink-0 ${r.diff < 0 ? 'text-red-500 font-bold' : 'text-gray-400'}`}>
+                    {r.inputValue}/{r.standardStock}
+                    {r.diff < 0 && <span className="ml-1">({r.diff})</span>}
                   </span>
                 </div>
               ))}
             </div>
-          )}
+          ))}
         </div>
-      ))}
-
-      {!allDone && (
-        <p className="text-xs text-gray-300">記録なし</p>
       )}
     </div>
   );
 }
 
-export default function HistoryPage({ records, onBack }: Props) {
+function ShiftSection({ label, data, color }: {
+  label: string;
+  data: ShiftData;
+  color: 'blue' | 'indigo';
+}) {
+  const [openId, setOpenId] = useState<string | null>(null);
+  const toggle = (id: string) => setOpenId(prev => prev === id ? null : id);
+  const labelColor = color === 'blue' ? 'text-blue-600' : 'text-indigo-600';
+
+  return (
+    <div className="flex-1 min-w-0">
+      <p className={`text-xs font-bold mb-2 ${labelColor}`}>{label}</p>
+      {!data.hasAny ? (
+        <p className="text-xs text-gray-300">記録なし</p>
+      ) : (
+        <>
+          {data.groups.map(g => (
+            <GroupRow
+              key={g.groupId}
+              group={g}
+              isOpen={openId === g.groupId}
+              onToggle={() => toggle(g.groupId)}
+            />
+          ))}
+          {data.others.map(o => (
+            <div key={o.categoryId} className="mb-2">
+              <div className="flex items-center justify-between">
+                <span className={`text-xs font-bold ${o.hasDeficit ? 'text-orange-500' : 'text-green-600'}`}>
+                  {o.hasDeficit ? '⚠️' : '✅'} {o.categoryName}
+                </span>
+                <button onClick={() => toggle(o.categoryId)} className="text-xs text-gray-400 underline ml-2">
+                  {openId === o.categoryId ? '▲' : '▼'}
+                </button>
+              </div>
+              {openId === o.categoryId && (
+                <div className="mt-1 bg-gray-50 rounded-xl p-2">
+                  {o.records.map(r => (
+                    <div key={r.recordId} className="flex justify-between text-xs py-0.5">
+                      <span className="text-gray-600 mr-2 truncate">{r.itemName}</span>
+                      <span className={`shrink-0 ${r.diff < 0 ? 'text-red-500 font-bold' : 'text-gray-400'}`}>
+                        {r.inputValue}/{r.standardStock}
+                        {r.diff < 0 && <span className="ml-1">({r.diff})</span>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+export default function HistoryPage({ records, onBack }: { records: CheckRecord[]; onBack: () => void }) {
   const grouped = groupRecords(records);
 
   return (
@@ -133,17 +220,9 @@ export default function HistoryPage({ records, onBack }: Props) {
                   {formatDate(day.date)}
                 </p>
                 <div className="flex gap-4">
-                  <ShiftBlock
-                    label="☀️ 日勤"
-                    categories={day.day}
-                    color="blue"
-                  />
-                  <div className="w-px bg-gray-100" />
-                  <ShiftBlock
-                    label="🌙 夜勤"
-                    categories={day.night}
-                    color="indigo"
-                  />
+                  <ShiftSection label="☀️ 日勤" data={day.day}   color="blue"   />
+                  <div className="w-px bg-gray-100 shrink-0" />
+                  <ShiftSection label="🌙 夜勤" data={day.night} color="indigo" />
                 </div>
               </div>
             ))}

@@ -48,7 +48,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
   },
   {
     id: 'cat-er-stock-a',
-    name: 'ERストック薬A',
+    name: '処置室ストック薬',
     frequency: 'daily2',
     items: [
       { id: 'esa-01', name: 'ソルアセトF（5本）',       standardStock: 5  },
@@ -72,7 +72,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
   },
   {
     id: 'cat-er-stock-b',
-    name: 'ERストック薬B',
+    name: '救命室ストック薬',
     frequency: 'daily2',
     items: [
       { id: 'esb-01', name: '生食 500ml',               standardStock: 3  },
@@ -201,7 +201,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
   // ══════════════════════════════════════════════
   {
     id: 'cat-karte-drug',
-    name: '救急カート薬品（カテ）',
+    name: 'カテ室救急カート薬品',
     frequency: 'daily1',
     items: [
       { id: 'kd-01', name: 'アドレナリン注シリンジ 1mg/1ml',  standardStock: 10 },
@@ -268,7 +268,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
   },
   {
     id: 'cat-karte-equip',
-    name: 'カテ室物品（日勤）',
+    name: 'カテ室救急カート物品',
     frequency: 'daily1',
     items: [
       { id: 'ke-01', name: '留置針 20・22G',            standardStock: 2  },
