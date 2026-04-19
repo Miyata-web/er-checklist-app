@@ -14,7 +14,7 @@ type Page =
   | { name: 'date'; shift: Shift }
   | { name: 'category'; shift: Shift; selectedDate: string }
   | { name: 'check'; shift: Shift; selectedDate: string; category: Category; initialDeficits: Record<string, number> }
-  | { name: 'history' }
+  | { name: 'history'; groupId: string }
   | { name: 'admin' };
 
 const GAS_ENABLED = Boolean(import.meta.env.VITE_GAS_URL && !import.meta.env.VITE_GAS_URL.includes('PLACEHOLDER'));
@@ -125,7 +125,7 @@ export default function App() {
         drafts={drafts}
         onSelectCategory={cat => handleCategorySelect(page.shift, page.selectedDate, cat)}
         onBack={() => setPage({ name: 'date', shift: page.shift })}
-        onGoHistory={() => setPage({ name: 'history' })}
+        onGoHistory={groupId => setPage({ name: 'history', groupId })}
         onGoAdmin={() => setPage({ name: 'admin' })}
       />
     );
@@ -158,6 +158,7 @@ export default function App() {
     return (
       <HistoryPage
         records={records}
+        groupId={page.groupId}
         onBack={() => setPage({ name: 'home' })}
       />
     );

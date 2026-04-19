@@ -4,6 +4,7 @@ import {
   isCategoryDone,
   isCategoryDraft,
 } from '../store/useStore';
+import { HISTORY_GROUPS } from '../store/historyGroups';
 
 interface Props {
   shift: Shift;
@@ -13,7 +14,7 @@ interface Props {
   drafts: CheckDraft[];
   onSelectCategory: (category: Category) => void;
   onBack: () => void;
-  onGoHistory: () => void;
+  onGoHistory: (groupId: string) => void;
   onGoAdmin: () => void;
 }
 
@@ -197,16 +198,21 @@ export default function CategoryPage({
             </div>
           </>
         )}
-      </div>
 
-      <div className="border-t border-gray-200 bg-white flex">
-        <button
-          onClick={onGoHistory}
-          className="flex-1 py-4 text-sm text-gray-600 font-medium flex flex-col items-center gap-1 active:bg-gray-50"
-        >
-          <span className="text-xl">📋</span>
-          履歴
-        </button>
+        {/* グループ別履歴 */}
+        <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">グループ別履歴</h2>
+        <div className="grid grid-cols-2 gap-2 mb-6">
+          {HISTORY_GROUPS.map(group => (
+            <button
+              key={group.id}
+              onClick={() => onGoHistory(group.id)}
+              className="bg-white rounded-2xl shadow-sm px-3 py-3 flex items-center gap-2 border-2 border-transparent active:bg-gray-50 text-left"
+            >
+              <span className="text-lg shrink-0">📋</span>
+              <span className="text-sm font-medium text-gray-700 leading-tight">{group.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

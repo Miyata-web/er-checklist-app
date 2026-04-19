@@ -1,16 +1,12 @@
 import { useState } from 'react';
 import type { CheckRecord } from '../types';
+import { HISTORY_GROUPS, GROUPED_IDS } from '../store/historyGroups';
 
-// 履歴グループ定義
-const HISTORY_GROUPS = [
-  { id: 'er-drugs', label: 'ER不足薬剤一覧',     ids: new Set(['cat-er-cart-drug1','cat-er-cart-drug2','cat-er-stock-a','cat-er-stock-b']) },
-  { id: 'er-items', label: 'ER物品',              ids: new Set(['cat-er-steel','cat-er-teisu']) },
-  { id: 'er-cart',  label: 'ER救急カート',        ids: new Set(['cat-er-cart1','cat-er-cart2']) },
-  { id: 'kate-drug',label: 'カテ室ストック薬',    ids: new Set(['cat-stock1','cat-stock2','cat-karte-drug']) },
-  { id: 'kate-eq',  label: 'カテ室救急カート物品', ids: new Set(['cat-karte-equip']) },
-];
-
-const GROUPED_IDS = new Set(HISTORY_GROUPS.flatMap(g => [...g.ids]));
+interface Props {
+  records: CheckRecord[];
+  groupId?: string;
+  onBack: () => void;
+}
 
 interface GroupEntry {
   groupId: string;
@@ -38,39 +34,55 @@ interface DayEntry {
   night: ShiftData;
 }
 
-function buildShiftData(records: CheckRecord[]): ShiftData {
-  const groups: GroupEntry[] = HISTORY_GROUPS.map(g => {
+function buildShiftData(records: CheckRecord[], filterGroupId?: string): ShiftData {
+  const targetGroups = filterGroupId
+    ? HISTORY_GROUPS.filter(g => g.id === filterGroupId)
+    : HISTORY_GROUPS;
+
+  const groups: GroupEntry[] = targetGroups.map(g => {
     const recs = records.filter(r => g.ids.has(r.categoryId));
     return { groupId: g.id, label: g.label, records: recs, hasDeficit: recs.some(r => r.diff < 0) };
   });
 
-  const otherRecs = records.filter(r => !GROUPED_IDS.has(r.categoryId));
+  const otherRecs = filterGroupId
+    ? []
+    : records.filter(r => !GROUPED_IDS.has(r.categoryId));
+
   const otherMap = new Map<string, OtherEntry>();
   otherRecs.forEach(r => {
-    if (!otherMap.has(r.categoryId)) {
+    if (!otherMap.has(r.categoryId))
       otherMap.set(r.categoryId, { categoryId: r.categoryId, categoryName: r.categoryName, records: [], hasDeficit: false });
-    }
     const e = otherMap.get(r.categoryId)!;
     e.records.push(r);
     if (r.diff < 0) e.hasDeficit = true;
   });
 
-  return {
-    groups,
-    others: Array.from(otherMap.values()),
-    hasAny: records.length > 0,
-  };
+  return { groups, others: Array.from(otherMap.values()), hasAny: records.length > 0 };
 }
 
-function groupRecords(records: CheckRecord[]): DayEntry[] {
+function groupRecords(records: CheckRecord[], filterGroupId?: string): DayEntry[] {
+  // フィルター対象のカテゴリIDセット
+  const filterIds = filterGroupId
+    ? HISTORY_GROUPS.find(g => g.id === filterGroupId)?.ids
+    : undefined;
+
+  const filtered = filterIds
+    ? records.filter(r => filterIds.has(r.categoryId))
+    : records;
+
   const byDate = new Map<string, { day: CheckRecord[]; night: CheckRecord[] }>();
-  records.forEach(r => {
+  filtered.forEach(r => {
     if (!byDate.has(r.date)) byDate.set(r.date, { day: [], night: [] });
     const e = byDate.get(r.date)!;
     (r.shift === 'day' ? e.day : e.night).push(r);
   });
+
   return Array.from(byDate.entries())
-    .map(([date, { day, night }]) => ({ date, day: buildShiftData(day), night: buildShiftData(night) }))
+    .map(([date, { day, night }]) => ({
+      date,
+      day:   buildShiftData(day,   filterGroupId),
+      night: buildShiftData(night, filterGroupId),
+    }))
     .sort((a, b) => b.date.localeCompare(a.date));
 }
 
@@ -89,7 +101,6 @@ function GroupRow({ group, isOpen, onToggle }: {
   const icon  = !hasDone ? '⬜' : group.hasDeficit ? '⚠️' : '✅';
   const color = !hasDone ? 'text-gray-300' : group.hasDeficit ? 'text-orange-500' : 'text-green-600';
 
-  // 詳細：カテゴリごとにまとめる
   const catMap = new Map<string, { name: string; records: CheckRecord[] }>();
   group.records.forEach(r => {
     if (!catMap.has(r.categoryId)) catMap.set(r.categoryId, { name: r.categoryName, records: [] });
@@ -107,7 +118,6 @@ function GroupRow({ group, isOpen, onToggle }: {
         )}
       </div>
 
-      {/* 不足項目インライン表示 */}
       {hasDone && !isOpen && group.hasDeficit && (
         <div className="mt-0.5 pl-2">
           {group.records.filter(r => r.diff < 0).map(r => (
@@ -118,7 +128,6 @@ function GroupRow({ group, isOpen, onToggle }: {
         </div>
       )}
 
-      {/* 詳細展開 */}
       {isOpen && (
         <div className="mt-1 bg-gray-50 rounded-xl p-2 space-y-2">
           {Array.from(catMap.values()).map(cat => (
@@ -158,12 +167,7 @@ function ShiftSection({ label, data, color }: {
       ) : (
         <>
           {data.groups.map(g => (
-            <GroupRow
-              key={g.groupId}
-              group={g}
-              isOpen={openId === g.groupId}
-              onToggle={() => toggle(g.groupId)}
-            />
+            <GroupRow key={g.groupId} group={g} isOpen={openId === g.groupId} onToggle={() => toggle(g.groupId)} />
           ))}
           {data.others.map(o => (
             <div key={o.categoryId} className="mb-2">
@@ -196,14 +200,16 @@ function ShiftSection({ label, data, color }: {
   );
 }
 
-export default function HistoryPage({ records, onBack }: { records: CheckRecord[]; onBack: () => void }) {
-  const grouped = groupRecords(records);
+export default function HistoryPage({ records, groupId, onBack }: Props) {
+  const group   = groupId ? HISTORY_GROUPS.find(g => g.id === groupId) : undefined;
+  const title   = group ? `${group.label} 履歴` : 'チェック履歴';
+  const grouped = groupRecords(records, groupId);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <div className="bg-white border-b border-gray-200 px-4 py-4 flex items-center gap-3">
         <button onClick={onBack} className="text-gray-600 text-xl px-1">←</button>
-        <h1 className="text-lg font-bold text-gray-800">チェック履歴</h1>
+        <h1 className="text-lg font-bold text-gray-800">{title}</h1>
       </div>
 
       <div className="flex-1 p-4 overflow-y-auto">
