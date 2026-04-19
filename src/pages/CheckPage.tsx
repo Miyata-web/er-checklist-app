@@ -96,7 +96,7 @@ export default function CheckPage({ shift, selectedDate, category, initialDefici
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="h-screen bg-gray-50 flex flex-col">
       {/* ヘッダー */}
       <div className={`${shift === 'day' ? 'bg-blue-500' : 'bg-indigo-700'} text-white px-4 py-4`}>
         <div className="flex items-center gap-3">
