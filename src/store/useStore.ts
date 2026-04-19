@@ -5,10 +5,20 @@ import { DEFAULT_CATEGORIES } from './defaultData';
 const STORAGE_CATEGORIES = 'er-checklist-categories';
 const STORAGE_RECORDS    = 'er-checklist-records';
 const STORAGE_DRAFTS     = 'er-checklist-drafts';
+const STORAGE_VERSION    = 'er-checklist-data-version';
 const RETENTION_DAYS     = 7;
+
+// defaultData.ts のカテゴリ名・構成を変更した際にここを更新する
+const DATA_VERSION = '3';
 
 function loadCategories(): Category[] {
   try {
+    // バージョンが変わった場合はデフォルトデータにリセット
+    if (localStorage.getItem(STORAGE_VERSION) !== DATA_VERSION) {
+      localStorage.setItem(STORAGE_VERSION, DATA_VERSION);
+      localStorage.removeItem(STORAGE_CATEGORIES);
+      return DEFAULT_CATEGORIES;
+    }
     const raw = localStorage.getItem(STORAGE_CATEGORIES);
     if (raw) return JSON.parse(raw) as Category[];
   } catch { /* ignore */ }
