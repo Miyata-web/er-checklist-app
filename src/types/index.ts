@@ -1,5 +1,12 @@
 export type Shift = 'day' | 'night';
 
+export interface GroupConfirmation {
+  groupId: string;
+  date: string;
+  shift: Shift;
+  timestamp: string;
+}
+
 export interface CheckDraft {
   date: string;
   shift: Shift;

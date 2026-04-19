@@ -1,10 +1,11 @@
-import type { Category, CheckDraft, CheckRecord, Shift } from '../types';
+import type { Category, CheckDraft, CheckRecord, GroupConfirmation, Shift } from '../types';
 import {
   getMonthlyCheckCount,
   isCategoryDone,
   isCategoryDraft,
 } from '../store/useStore';
 import { HISTORY_GROUPS } from '../store/historyGroups';
+import type { HistoryGroup } from '../store/historyGroups';
 
 interface Props {
   shift: Shift;
@@ -12,10 +13,27 @@ interface Props {
   categories: Category[];
   records: CheckRecord[];
   drafts: CheckDraft[];
+  confirmations: GroupConfirmation[];
   onSelectCategory: (category: Category) => void;
   onBack: () => void;
   onGoHistory: (groupId: string) => void;
   onGoAdmin: () => void;
+}
+
+type GroupStatus = 'none' | 'deficit' | 'ok' | 'confirmed';
+
+function getGroupStatus(
+  group: HistoryGroup,
+  records: CheckRecord[],
+  confirmations: GroupConfirmation[],
+  date: string,
+  shift: Shift,
+): GroupStatus {
+  const recs = records.filter(r => group.ids.has(r.categoryId) && r.date === date);
+  if (recs.length === 0) return 'none';
+  if (confirmations.some(c => c.groupId === group.id && c.date === date && c.shift === shift)) return 'confirmed';
+  if (recs.some(r => r.diff < 0)) return 'deficit';
+  return 'ok';
 }
 
 function FrequencyBadge({ frequency }: { frequency: Category['frequency'] }) {
@@ -116,6 +134,7 @@ export default function CategoryPage({
   categories,
   records,
   drafts,
+  confirmations,
   onSelectCategory,
   onBack,
   onGoHistory,
@@ -202,16 +221,43 @@ export default function CategoryPage({
         {/* グループ別履歴 */}
         <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">グループ別履歴</h2>
         <div className="grid grid-cols-2 gap-2 mb-6">
-          {HISTORY_GROUPS.map(group => (
-            <button
-              key={group.id}
-              onClick={() => onGoHistory(group.id)}
-              className="bg-white rounded-2xl shadow-sm px-3 py-3 flex items-center gap-2 border-2 border-transparent active:bg-gray-50 text-left"
-            >
-              <span className="text-lg shrink-0">📋</span>
-              <span className="text-sm font-medium text-gray-700 leading-tight">{group.label}</span>
-            </button>
-          ))}
+          {HISTORY_GROUPS.map(group => {
+            const status = getGroupStatus(group, records, confirmations, selectedDate, shift);
+            const styles = {
+              none      : 'bg-white border-transparent text-gray-700',
+              ok        : 'bg-green-50 border-green-200 text-green-700',
+              deficit   : 'bg-red-50 border-red-300 text-red-700',
+              confirmed : 'bg-blue-50 border-blue-200 text-blue-700',
+            }[status];
+            const icon = {
+              none      : '📋',
+              ok        : '✅',
+              deficit   : '⚠️',
+              confirmed : '✅',
+            }[status];
+            const subLabel = {
+              none      : '',
+              ok        : '不足なし',
+              deficit   : '不足あり',
+              confirmed : '確認済み',
+            }[status];
+
+            return (
+              <button
+                key={group.id}
+                onClick={() => onGoHistory(group.id)}
+                className={`rounded-2xl shadow-sm px-3 py-3 flex flex-col gap-0.5 border-2 active:opacity-70 text-left ${styles}`}
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className="text-base shrink-0">{icon}</span>
+                  <span className="text-sm font-bold leading-tight">{group.label}</span>
+                </div>
+                {subLabel && (
+                  <span className="text-xs font-medium pl-6">{subLabel}</span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>

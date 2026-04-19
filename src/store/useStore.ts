@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { Category, CheckDraft, CheckRecord, Shift } from '../types';
+import type { Category, CheckDraft, CheckRecord, GroupConfirmation, Shift } from '../types';
 import { DEFAULT_CATEGORIES } from './defaultData';
 
 const STORAGE_CATEGORIES = 'er-checklist-categories';
 const STORAGE_RECORDS    = 'er-checklist-records';
-const STORAGE_DRAFTS     = 'er-checklist-drafts';
+const STORAGE_DRAFTS         = 'er-checklist-drafts';
+const STORAGE_CONFIRMATIONS  = 'er-checklist-confirmations';
 const STORAGE_VERSION    = 'er-checklist-data-version';
 const RETENTION_DAYS     = 7;
 
@@ -102,6 +103,33 @@ export function useDrafts() {
   }, []);
 
   return { drafts, saveDraft, clearDraft };
+}
+
+function loadConfirmations(): GroupConfirmation[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_CONFIRMATIONS);
+    if (raw) return JSON.parse(raw) as GroupConfirmation[];
+  } catch { /* ignore */ }
+  return [];
+}
+
+export function useConfirmations() {
+  const [confirmations, setConfirmations] = useState<GroupConfirmation[]>(loadConfirmations);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_CONFIRMATIONS, JSON.stringify(confirmations));
+  }, [confirmations]);
+
+  const addConfirmation = useCallback((groupId: string, date: string, shift: Shift) => {
+    setConfirmations(prev => {
+      const filtered = prev.filter(
+        c => !(c.groupId === groupId && c.date === date && c.shift === shift)
+      );
+      return [...filtered, { groupId, date, shift, timestamp: new Date().toISOString() }];
+    });
+  }, []);
+
+  return { confirmations, addConfirmation };
 }
 
 export function getTodayString(): string {

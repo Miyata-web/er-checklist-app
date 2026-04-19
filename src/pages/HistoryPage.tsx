@@ -1,10 +1,14 @@
 import { useState } from 'react';
-import type { CheckRecord } from '../types';
+import type { CheckRecord, GroupConfirmation, Shift } from '../types';
 import { HISTORY_GROUPS, GROUPED_IDS } from '../store/historyGroups';
 
 interface Props {
   records: CheckRecord[];
   groupId?: string;
+  shift: Shift;
+  selectedDate: string;
+  confirmations: GroupConfirmation[];
+  onConfirm: (groupId: string, date: string, shift: Shift) => void;
   onBack: () => void;
 }
 
@@ -44,10 +48,7 @@ function buildShiftData(records: CheckRecord[], filterGroupId?: string): ShiftDa
     return { groupId: g.id, label: g.label, records: recs, hasDeficit: recs.some(r => r.diff < 0) };
   });
 
-  const otherRecs = filterGroupId
-    ? []
-    : records.filter(r => !GROUPED_IDS.has(r.categoryId));
-
+  const otherRecs = filterGroupId ? [] : records.filter(r => !GROUPED_IDS.has(r.categoryId));
   const otherMap = new Map<string, OtherEntry>();
   otherRecs.forEach(r => {
     if (!otherMap.has(r.categoryId))
@@ -61,14 +62,11 @@ function buildShiftData(records: CheckRecord[], filterGroupId?: string): ShiftDa
 }
 
 function groupRecords(records: CheckRecord[], filterGroupId?: string): DayEntry[] {
-  // フィルター対象のカテゴリIDセット
   const filterIds = filterGroupId
     ? HISTORY_GROUPS.find(g => g.id === filterGroupId)?.ids
     : undefined;
 
-  const filtered = filterIds
-    ? records.filter(r => filterIds.has(r.categoryId))
-    : records;
+  const filtered = filterIds ? records.filter(r => filterIds.has(r.categoryId)) : records;
 
   const byDate = new Map<string, { day: CheckRecord[]; night: CheckRecord[] }>();
   filtered.forEach(r => {
@@ -98,8 +96,12 @@ function GroupRow({ group, isOpen, onToggle }: {
   onToggle: () => void;
 }) {
   const hasDone = group.records.length > 0;
+  const noDeficit = hasDone && !group.hasDeficit;
+
   const icon  = !hasDone ? '⬜' : group.hasDeficit ? '⚠️' : '✅';
-  const color = !hasDone ? 'text-gray-300' : group.hasDeficit ? 'text-orange-500' : 'text-green-600';
+  const color = !hasDone ? 'text-gray-300'
+    : group.hasDeficit ? 'text-orange-500'
+    : 'text-green-600';
 
   const catMap = new Map<string, { name: string; records: CheckRecord[] }>();
   group.records.forEach(r => {
@@ -110,14 +112,20 @@ function GroupRow({ group, isOpen, onToggle }: {
   return (
     <div className="mb-2 border-b border-gray-50 pb-2 last:border-0">
       <div className="flex items-center justify-between">
-        <span className={`text-xs font-bold ${color}`}>{icon} {group.label}</span>
+        <div>
+          <span className={`text-xs font-bold ${color}`}>{icon} {group.label}</span>
+          {noDeficit && (
+            <span className="ml-2 text-xs text-green-500 font-medium">不足なし</span>
+          )}
+        </div>
         {hasDone && (
-          <button onClick={onToggle} className="text-xs text-gray-400 underline ml-2">
+          <button onClick={onToggle} className="text-xs text-gray-400 underline ml-2 shrink-0">
             {isOpen ? '▲ 閉じる' : '▼ 詳細'}
           </button>
         )}
       </div>
 
+      {/* 不足項目インライン */}
       {hasDone && !isOpen && group.hasDeficit && (
         <div className="mt-0.5 pl-2">
           {group.records.filter(r => r.diff < 0).map(r => (
@@ -128,6 +136,7 @@ function GroupRow({ group, isOpen, onToggle }: {
         </div>
       )}
 
+      {/* 詳細展開 */}
       {isOpen && (
         <div className="mt-1 bg-gray-50 rounded-xl p-2 space-y-2">
           {Array.from(catMap.values()).map(cat => (
@@ -138,7 +147,10 @@ function GroupRow({ group, isOpen, onToggle }: {
                   <span className="text-gray-600 mr-2 truncate">{r.itemName}</span>
                   <span className={`shrink-0 ${r.diff < 0 ? 'text-red-500 font-bold' : 'text-gray-400'}`}>
                     {r.inputValue}/{r.standardStock}
-                    {r.diff < 0 && <span className="ml-1">({r.diff})</span>}
+                    {r.diff < 0
+                      ? <span className="ml-1">({r.diff})</span>
+                      : <span className="ml-1 text-green-500">不足なし</span>
+                    }
                   </span>
                 </div>
               ))}
@@ -172,9 +184,12 @@ function ShiftSection({ label, data, color }: {
           {data.others.map(o => (
             <div key={o.categoryId} className="mb-2">
               <div className="flex items-center justify-between">
-                <span className={`text-xs font-bold ${o.hasDeficit ? 'text-orange-500' : 'text-green-600'}`}>
-                  {o.hasDeficit ? '⚠️' : '✅'} {o.categoryName}
-                </span>
+                <div>
+                  <span className={`text-xs font-bold ${o.hasDeficit ? 'text-orange-500' : 'text-green-600'}`}>
+                    {o.hasDeficit ? '⚠️' : '✅'} {o.categoryName}
+                  </span>
+                  {!o.hasDeficit && <span className="ml-2 text-xs text-green-500 font-medium">不足なし</span>}
+                </div>
                 <button onClick={() => toggle(o.categoryId)} className="text-xs text-gray-400 underline ml-2">
                   {openId === o.categoryId ? '▲' : '▼'}
                 </button>
@@ -186,7 +201,10 @@ function ShiftSection({ label, data, color }: {
                       <span className="text-gray-600 mr-2 truncate">{r.itemName}</span>
                       <span className={`shrink-0 ${r.diff < 0 ? 'text-red-500 font-bold' : 'text-gray-400'}`}>
                         {r.inputValue}/{r.standardStock}
-                        {r.diff < 0 && <span className="ml-1">({r.diff})</span>}
+                        {r.diff < 0
+                          ? <span className="ml-1">({r.diff})</span>
+                          : <span className="ml-1 text-green-500">不足なし</span>
+                        }
                       </span>
                     </div>
                   ))}
@@ -200,17 +218,45 @@ function ShiftSection({ label, data, color }: {
   );
 }
 
-export default function HistoryPage({ records, groupId, onBack }: Props) {
+export default function HistoryPage({ records, groupId, shift, selectedDate, confirmations, onConfirm, onBack }: Props) {
   const group   = groupId ? HISTORY_GROUPS.find(g => g.id === groupId) : undefined;
   const title   = group ? `${group.label} 履歴` : 'チェック履歴';
   const grouped = groupRecords(records, groupId);
+
+  const isConfirmed = groupId
+    ? confirmations.some(c => c.groupId === groupId && c.date === selectedDate && c.shift === shift)
+    : false;
+
+  // 当日のデータが存在するか
+  const hasCurrentDate = groupId
+    ? records.some(r => (group?.ids.has(r.categoryId)) && r.date === selectedDate)
+    : false;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <div className="bg-white border-b border-gray-200 px-4 py-4 flex items-center gap-3">
         <button onClick={onBack} className="text-gray-600 text-xl px-1">←</button>
-        <h1 className="text-lg font-bold text-gray-800">{title}</h1>
+        <h1 className="text-lg font-bold text-gray-800 flex-1">{title}</h1>
       </div>
+
+      {/* 確認済みボタン（グループ履歴かつ当日データあり） */}
+      {groupId && hasCurrentDate && (
+        <div className="bg-white border-b border-gray-100 px-4 py-3">
+          {isConfirmed ? (
+            <div className="flex items-center gap-2 text-blue-600">
+              <span className="text-lg">✅</span>
+              <span className="text-sm font-bold">確認済み（{formatDate(selectedDate)}）</span>
+            </div>
+          ) : (
+            <button
+              onClick={() => onConfirm(groupId, selectedDate, shift)}
+              className="w-full py-3 rounded-xl bg-blue-500 text-white text-sm font-bold active:bg-blue-600 transition-colors"
+            >
+              ✅ 確認済みにする（{formatDate(selectedDate)}）
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="flex-1 p-4 overflow-y-auto">
         {grouped.length === 0 ? (

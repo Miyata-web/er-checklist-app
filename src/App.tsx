@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Category, CheckRecord, Shift } from './types';
-import { useCategories, useRecords, useDrafts } from './store/useStore';
+import { useCategories, useRecords, useDrafts, useConfirmations } from './store/useStore';
 import { gasClient } from './api/gasClient';
 import HomePage     from './pages/HomePage';
 import DatePage     from './pages/DatePage';
@@ -14,16 +14,17 @@ type Page =
   | { name: 'date'; shift: Shift }
   | { name: 'category'; shift: Shift; selectedDate: string }
   | { name: 'check'; shift: Shift; selectedDate: string; category: Category; initialDeficits: Record<string, number> }
-  | { name: 'history'; groupId: string }
+  | { name: 'history'; groupId: string; shift: Shift; selectedDate: string }
   | { name: 'admin' };
 
 const GAS_ENABLED = Boolean(import.meta.env.VITE_GAS_URL && !import.meta.env.VITE_GAS_URL.includes('PLACEHOLDER'));
 
 export default function App() {
   const [page, setPage] = useState<Page>({ name: 'home' });
-  const { categories, saveCategories } = useCategories();
-  const { records, addRecords }        = useRecords();
+  const { categories, saveCategories }    = useCategories();
+  const { records, addRecords }           = useRecords();
   const { drafts, saveDraft, clearDraft } = useDrafts();
+  const { confirmations, addConfirmation } = useConfirmations();
 
   const handleShiftSelect = (shift: Shift) => {
     setPage({ name: 'date', shift });
@@ -36,21 +37,18 @@ export default function App() {
   const handleCategorySelect = (shift: Shift, selectedDate: string, category: Category) => {
     const initialDeficits: Record<string, number> = {};
 
-    // 1. 同シフトの下書きを優先
     const draft = drafts.find(
       d => d.date === selectedDate && d.shift === shift && d.categoryId === category.id
     );
     if (draft) {
       draft.items.forEach(item => { initialDeficits[item.itemId] = item.deficit; });
     } else {
-      // 2. 同シフトの完了済みレコード
       const existing = records.filter(
         r => r.date === selectedDate && r.shift === shift && r.categoryId === category.id
       );
       if (existing.length > 0) {
         existing.forEach(r => { initialDeficits[r.itemId] = -r.diff; });
       } else if (shift === 'night') {
-        // 3. 夜勤の場合、同日の日勤レコードを引き継ぐ
         const dayRecords = records.filter(
           r => r.date === selectedDate && r.shift === 'day' && r.categoryId === category.id
         );
@@ -86,19 +84,16 @@ export default function App() {
         })),
       });
     } catch {
-      // GAS保存失敗はサイレントに無視（ローカル保存は成功済み）
+      // GAS保存失敗はサイレントに無視
     }
   };
 
   const handleSaveCategories = async (cats: Category[]) => {
     saveCategories(cats);
-
     if (!GAS_ENABLED) return;
     try {
       await gasClient.saveItems(cats);
-    } catch {
-      // GAS同期失敗はサイレントに無視
-    }
+    } catch { /* ignore */ }
   };
 
   if (page.name === 'home') {
@@ -123,9 +118,10 @@ export default function App() {
         categories={categories}
         records={records}
         drafts={drafts}
+        confirmations={confirmations}
         onSelectCategory={cat => handleCategorySelect(page.shift, page.selectedDate, cat)}
         onBack={() => setPage({ name: 'date', shift: page.shift })}
-        onGoHistory={groupId => setPage({ name: 'history', groupId })}
+        onGoHistory={groupId => setPage({ name: 'history', groupId, shift: page.shift, selectedDate: page.selectedDate })}
         onGoAdmin={() => setPage({ name: 'admin' })}
       />
     );
@@ -159,7 +155,11 @@ export default function App() {
       <HistoryPage
         records={records}
         groupId={page.groupId}
-        onBack={() => setPage({ name: 'home' })}
+        shift={page.shift}
+        selectedDate={page.selectedDate}
+        confirmations={confirmations}
+        onConfirm={addConfirmation}
+        onBack={() => setPage({ name: 'category', shift: page.shift, selectedDate: page.selectedDate })}
       />
     );
   }
