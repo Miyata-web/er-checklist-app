@@ -10,7 +10,7 @@ const STORAGE_VERSION    = 'er-checklist-data-version';
 const RETENTION_DAYS     = 7;
 
 // defaultData.ts のカテゴリ名・構成を変更した際にここを更新する
-const DATA_VERSION = '4';
+const DATA_VERSION = '5';
 
 function loadCategories(): Category[] {
   try {
