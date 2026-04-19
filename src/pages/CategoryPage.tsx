@@ -7,7 +7,10 @@ import {
 import { HISTORY_GROUPS } from '../store/historyGroups';
 import type { HistoryGroup } from '../store/historyGroups';
 
+export type CategoryPageMode = 'daily' | 'monthly';
+
 interface Props {
+  mode: CategoryPageMode;
   shift: Shift;
   selectedDate: string;
   categories: Category[];
@@ -129,6 +132,7 @@ function getCardStatus(
 }
 
 export default function CategoryPage({
+  mode,
   shift,
   selectedDate,
   categories,
@@ -140,22 +144,45 @@ export default function CategoryPage({
   onGoHistory,
   onGoAdmin,
 }: Props) {
-  const shiftLabel = shift === 'day' ? '☀️ 日勤' : '🌙 夜勤';
+  const isDaily = mode === 'daily';
 
+  const shiftLabel = shift === 'day' ? '☀️ 日勤' : '🌙 夜勤';
   const [y, m, d] = selectedDate.split('-').map(Number);
   const dow = new Date(y, m - 1, d).getDay();
   const dateLabel = `${m}/${d}（${'日月火水木金土'[dow]}）`;
 
-  const dailyCategories   = categories.filter(c => c.frequency === 'daily1' || c.frequency === 'daily2');
-  const monthlyCategories = categories.filter(c => c.frequency === 'monthly1' || c.frequency === 'monthly2');
+  // Filter categories by mode and (for daily) by shift applicability
+  const visibleCategories = categories.filter(cat => {
+    if (isDaily) {
+      const isDaily_ = cat.frequency === 'daily1' || cat.frequency === 'daily2';
+      if (!isDaily_) return false;
+      // If category has a shiftFilter, only show when shift matches
+      if (cat.shiftFilter && !cat.shiftFilter.includes(shift)) return false;
+      return true;
+    } else {
+      return cat.frequency === 'monthly1' || cat.frequency === 'monthly2';
+    }
+  });
+
+  const dailyCategories   = visibleCategories.filter(c => c.frequency === 'daily1' || c.frequency === 'daily2');
+  const monthlyCategories = visibleCategories.filter(c => c.frequency === 'monthly1' || c.frequency === 'monthly2');
+
+  const headerBg = isDaily
+    ? (shift === 'day' ? 'bg-blue-500' : 'bg-indigo-700')
+    : 'bg-teal-600';
+
+  const headerTitle = isDaily ? `${shiftLabel} カテゴリ選択` : '月々のチェック';
+  const headerSub   = isDaily
+    ? `${dateLabel}　チェックするカテゴリを選んでください`
+    : `${dateLabel}　チェックするカテゴリを選んでください`;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <div className={`${shift === 'day' ? 'bg-blue-500' : 'bg-indigo-700'} text-white px-4 py-4 flex items-center gap-3`}>
+      <div className={`${headerBg} text-white px-4 py-4 flex items-center gap-3`}>
         <button onClick={onBack} className="text-white text-xl px-1">←</button>
         <div className="flex-1">
-          <h1 className="text-lg font-bold">{shiftLabel} カテゴリ選択</h1>
-          <p className="text-xs opacity-80">{dateLabel}　チェックするカテゴリを選んでください</p>
+          <h1 className="text-lg font-bold">{headerTitle}</h1>
+          <p className="text-xs opacity-80">{headerSub}</p>
         </div>
         <button
           onClick={onGoAdmin}
@@ -167,34 +194,38 @@ export default function CategoryPage({
       </div>
 
       <div className="flex-1 p-4 overflow-y-auto">
-        <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">毎日チェック</h2>
-        <div className="flex flex-col gap-3 mb-6">
-          {dailyCategories.map(cat => {
-            const status = getCardStatus(cat, records, drafts, shift, selectedDate);
-            return (
-              <button
-                key={cat.id}
-                onClick={() => onSelectCategory(cat)}
-                className={`w-full text-left bg-white rounded-2xl shadow-sm p-4 flex items-center justify-between border-2 transition-all active:scale-98 ${
-                  status === 'done'  ? 'border-green-200'  :
-                  status === 'draft' ? 'border-orange-200' :
-                  'border-transparent'
-                }`}
-              >
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-bold text-gray-800">{cat.name}</span>
-                    <FrequencyBadge frequency={cat.frequency} />
-                  </div>
-                  <StatusBadge category={cat} records={records} drafts={drafts} shift={shift} selectedDate={selectedDate} />
-                </div>
-                <span className="text-gray-300 text-xl">›</span>
-              </button>
-            );
-          })}
-        </div>
+        {isDaily && dailyCategories.length > 0 && (
+          <>
+            <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">毎日チェック</h2>
+            <div className="flex flex-col gap-3 mb-6">
+              {dailyCategories.map(cat => {
+                const status = getCardStatus(cat, records, drafts, shift, selectedDate);
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() => onSelectCategory(cat)}
+                    className={`w-full text-left bg-white rounded-2xl shadow-sm p-4 flex items-center justify-between border-2 transition-all active:scale-98 ${
+                      status === 'done'  ? 'border-green-200'  :
+                      status === 'draft' ? 'border-orange-200' :
+                      'border-transparent'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-bold text-gray-800">{cat.name}</span>
+                        <FrequencyBadge frequency={cat.frequency} />
+                      </div>
+                      <StatusBadge category={cat} records={records} drafts={drafts} shift={shift} selectedDate={selectedDate} />
+                    </div>
+                    <span className="text-gray-300 text-xl">›</span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
 
-        {monthlyCategories.length > 0 && (
+        {!isDaily && monthlyCategories.length > 0 && (
           <>
             <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">月次チェック</h2>
             <div className="flex flex-col gap-3 mb-6">
@@ -218,47 +249,51 @@ export default function CategoryPage({
           </>
         )}
 
-        {/* グループ別履歴 */}
-        <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">グループ別履歴</h2>
-        <div className="grid grid-cols-2 gap-2 mb-6">
-          {HISTORY_GROUPS.map(group => {
-            const status = getGroupStatus(group, records, confirmations, selectedDate, shift);
-            const styles = {
-              none      : 'bg-white border-transparent text-gray-700',
-              ok        : 'bg-green-50 border-green-200 text-green-700',
-              deficit   : 'bg-red-50 border-red-300 text-red-700',
-              confirmed : 'bg-blue-50 border-blue-200 text-blue-700',
-            }[status];
-            const icon = {
-              none      : '📋',
-              ok        : '✅',
-              deficit   : '⚠️',
-              confirmed : '✅',
-            }[status];
-            const subLabel = {
-              none      : '',
-              ok        : '不足なし',
-              deficit   : '不足あり',
-              confirmed : '確認済み',
-            }[status];
+        {/* グループ別履歴（日々チェックのみ） */}
+        {isDaily && (
+          <>
+            <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">グループ別履歴</h2>
+            <div className="grid grid-cols-2 gap-2 mb-6">
+              {HISTORY_GROUPS.map(group => {
+                const status = getGroupStatus(group, records, confirmations, selectedDate, shift);
+                const styles = {
+                  none      : 'bg-white border-transparent text-gray-700',
+                  ok        : 'bg-green-50 border-green-200 text-green-700',
+                  deficit   : 'bg-red-50 border-red-300 text-red-700',
+                  confirmed : 'bg-blue-50 border-blue-200 text-blue-700',
+                }[status];
+                const icon = {
+                  none      : '📋',
+                  ok        : '✅',
+                  deficit   : '⚠️',
+                  confirmed : '✅',
+                }[status];
+                const subLabel = {
+                  none      : '',
+                  ok        : '不足なし',
+                  deficit   : '不足あり',
+                  confirmed : '確認済み',
+                }[status];
 
-            return (
-              <button
-                key={group.id}
-                onClick={() => onGoHistory(group.id)}
-                className={`rounded-2xl shadow-sm px-3 py-3 flex flex-col gap-0.5 border-2 active:opacity-70 text-left ${styles}`}
-              >
-                <div className="flex items-center gap-1.5">
-                  <span className="text-base shrink-0">{icon}</span>
-                  <span className="text-sm font-bold leading-tight">{group.label}</span>
-                </div>
-                {subLabel && (
-                  <span className="text-xs font-medium pl-6">{subLabel}</span>
-                )}
-              </button>
-            );
-          })}
-        </div>
+                return (
+                  <button
+                    key={group.id}
+                    onClick={() => onGoHistory(group.id)}
+                    className={`rounded-2xl shadow-sm px-3 py-3 flex flex-col gap-0.5 border-2 active:opacity-70 text-left ${styles}`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-base shrink-0">{icon}</span>
+                      <span className="text-sm font-bold leading-tight">{group.label}</span>
+                    </div>
+                    {subLabel && (
+                      <span className="text-xs font-medium pl-6">{subLabel}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

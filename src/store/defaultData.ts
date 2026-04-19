@@ -144,6 +144,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
     id: 'cat-er-cart1',
     name: 'ER救急カート物品 1室（夜勤）',
     frequency: 'daily1',
+    shiftFilter: ['night'],
     items: [
       { id: 'ec1-01', name: '留置針 20・22G',           standardStock: 2  },
       { id: 'ec1-02', name: '注射針 18G',               standardStock: 3  },
@@ -172,6 +173,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
     id: 'cat-er-cart2',
     name: 'ER救急カート物品 2室（夜勤）',
     frequency: 'daily1',
+    shiftFilter: ['night'],
     items: [
       { id: 'ec2-01', name: '留置針 20・22G',           standardStock: 2  },
       { id: 'ec2-02', name: '注射針 22G/23G',           standardStock: 2  },

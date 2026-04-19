@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import type { Category, CheckRecord, Shift } from './types';
-import { useCategories, useRecords, useDrafts, useConfirmations } from './store/useStore';
+import { useCategories, useRecords, useDrafts, useConfirmations, getTodayString } from './store/useStore';
 import { gasClient } from './api/gasClient';
 import HomePage     from './pages/HomePage';
+import ShiftPage    from './pages/ShiftPage';
 import DatePage     from './pages/DatePage';
 import CategoryPage from './pages/CategoryPage';
 import CheckPage    from './pages/CheckPage';
@@ -11,8 +12,10 @@ import AdminPage    from './pages/AdminPage';
 
 type Page =
   | { name: 'home' }
+  | { name: 'shift' }
   | { name: 'date'; shift: Shift }
   | { name: 'category'; shift: Shift; selectedDate: string }
+  | { name: 'category-monthly' }
   | { name: 'check'; shift: Shift; selectedDate: string; category: Category; initialDeficits: Record<string, number> }
   | { name: 'history'; groupId: string; shift: Shift; selectedDate: string }
   | { name: 'admin' };
@@ -25,14 +28,6 @@ export default function App() {
   const { records, addRecords }           = useRecords();
   const { drafts, saveDraft, clearDraft } = useDrafts();
   const { confirmations, addConfirmation } = useConfirmations();
-
-  const handleShiftSelect = (shift: Shift) => {
-    setPage({ name: 'date', shift });
-  };
-
-  const handleDateSelect = (shift: Shift, selectedDate: string) => {
-    setPage({ name: 'category', shift, selectedDate });
-  };
 
   const handleCategorySelect = (shift: Shift, selectedDate: string, category: Category) => {
     const initialDeficits: Record<string, number> = {};
@@ -97,15 +92,29 @@ export default function App() {
   };
 
   if (page.name === 'home') {
-    return <HomePage onSelectShift={handleShiftSelect} />;
+    return (
+      <HomePage
+        onSelectDaily={() => setPage({ name: 'shift' })}
+        onSelectMonthly={() => setPage({ name: 'category-monthly' })}
+      />
+    );
+  }
+
+  if (page.name === 'shift') {
+    return (
+      <ShiftPage
+        onSelectShift={shift => setPage({ name: 'date', shift })}
+        onBack={() => setPage({ name: 'home' })}
+      />
+    );
   }
 
   if (page.name === 'date') {
     return (
       <DatePage
         shift={page.shift}
-        onSelectDate={date => handleDateSelect(page.shift, date)}
-        onBack={() => setPage({ name: 'home' })}
+        onSelectDate={date => setPage({ name: 'category', shift: page.shift, selectedDate: date })}
+        onBack={() => setPage({ name: 'shift' })}
       />
     );
   }
@@ -113,6 +122,7 @@ export default function App() {
   if (page.name === 'category') {
     return (
       <CategoryPage
+        mode="daily"
         shift={page.shift}
         selectedDate={page.selectedDate}
         categories={categories}
@@ -127,7 +137,31 @@ export default function App() {
     );
   }
 
+  if (page.name === 'category-monthly') {
+    const today = getTodayString();
+    return (
+      <CategoryPage
+        mode="monthly"
+        shift="day"
+        selectedDate={today}
+        categories={categories}
+        records={records}
+        drafts={drafts}
+        confirmations={confirmations}
+        onSelectCategory={cat => handleCategorySelect('day', today, cat)}
+        onBack={() => setPage({ name: 'home' })}
+        onGoHistory={() => {}}
+        onGoAdmin={() => setPage({ name: 'admin' })}
+      />
+    );
+  }
+
   if (page.name === 'check') {
+    const isDaily = page.category.frequency === 'daily1' || page.category.frequency === 'daily2';
+    const backTarget = isDaily
+      ? { name: 'category' as const, shift: page.shift, selectedDate: page.selectedDate }
+      : { name: 'category-monthly' as const };
+
     return (
       <CheckPage
         shift={page.shift}
@@ -143,9 +177,9 @@ export default function App() {
             items,
             timestamp : new Date().toISOString(),
           });
-          setPage({ name: 'category', shift: page.shift, selectedDate: page.selectedDate });
+          setPage(backTarget);
         }}
-        onBack={() => setPage({ name: 'category', shift: page.shift, selectedDate: page.selectedDate })}
+        onBack={() => setPage(backTarget)}
       />
     );
   }

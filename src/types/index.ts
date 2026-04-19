@@ -28,6 +28,7 @@ export interface Category {
   name: string;
   frequency: Frequency;
   items: CheckItem[];
+  shiftFilter?: Shift[];
 }
 
 export interface RecordItem {
