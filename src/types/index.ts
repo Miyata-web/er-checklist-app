@@ -1,5 +1,13 @@
 export type Shift = 'day' | 'night';
 
+export interface CheckDraft {
+  date: string;
+  shift: Shift;
+  categoryId: string;
+  items: { itemId: string; deficit: number }[];
+  timestamp: string;
+}
+
 export type Frequency = 'daily2' | 'daily1' | 'monthly1' | 'monthly2';
 
 export interface CheckItem {

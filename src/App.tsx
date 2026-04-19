@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import type { Category, CheckRecord, Shift } from './types';
-import { useCategories, useRecords } from './store/useStore';
+import { useCategories, useRecords, useDrafts } from './store/useStore';
 import { gasClient } from './api/gasClient';
 import HomePage     from './pages/HomePage';
+import DatePage     from './pages/DatePage';
 import CategoryPage from './pages/CategoryPage';
 import CheckPage    from './pages/CheckPage';
 import HistoryPage  from './pages/HistoryPage';
@@ -10,8 +11,9 @@ import AdminPage    from './pages/AdminPage';
 
 type Page =
   | { name: 'home' }
-  | { name: 'category'; shift: Shift }
-  | { name: 'check'; shift: Shift; category: Category }
+  | { name: 'date'; shift: Shift }
+  | { name: 'category'; shift: Shift; selectedDate: string }
+  | { name: 'check'; shift: Shift; selectedDate: string; category: Category; initialDeficits: Record<string, number> }
   | { name: 'history' }
   | { name: 'admin' };
 
@@ -21,17 +23,51 @@ export default function App() {
   const [page, setPage] = useState<Page>({ name: 'home' });
   const { categories, saveCategories } = useCategories();
   const { records, addRecords }        = useRecords();
+  const { drafts, saveDraft, clearDraft } = useDrafts();
 
   const handleShiftSelect = (shift: Shift) => {
-    setPage({ name: 'category', shift });
+    setPage({ name: 'date', shift });
   };
 
-  const handleCategorySelect = (shift: Shift, category: Category) => {
-    setPage({ name: 'check', shift, category });
+  const handleDateSelect = (shift: Shift, selectedDate: string) => {
+    setPage({ name: 'category', shift, selectedDate });
+  };
+
+  const handleCategorySelect = (shift: Shift, selectedDate: string, category: Category) => {
+    const initialDeficits: Record<string, number> = {};
+
+    // 1. 同シフトの下書きを優先
+    const draft = drafts.find(
+      d => d.date === selectedDate && d.shift === shift && d.categoryId === category.id
+    );
+    if (draft) {
+      draft.items.forEach(item => { initialDeficits[item.itemId] = item.deficit; });
+    } else {
+      // 2. 同シフトの完了済みレコード
+      const existing = records.filter(
+        r => r.date === selectedDate && r.shift === shift && r.categoryId === category.id
+      );
+      if (existing.length > 0) {
+        existing.forEach(r => { initialDeficits[r.itemId] = -r.diff; });
+      } else if (shift === 'night') {
+        // 3. 夜勤の場合、同日の日勤レコードを引き継ぐ
+        const dayRecords = records.filter(
+          r => r.date === selectedDate && r.shift === 'day' && r.categoryId === category.id
+        );
+        dayRecords.forEach(r => { initialDeficits[r.itemId] = -r.diff; });
+      }
+    }
+
+    setPage({ name: 'check', shift, selectedDate, category, initialDeficits });
   };
 
   const handleCheckComplete = async (newRecords: CheckRecord[]) => {
     addRecords(newRecords);
+
+    if (newRecords.length > 0) {
+      const first = newRecords[0];
+      clearDraft(first.date, first.shift, first.categoryId);
+    }
 
     if (!GAS_ENABLED || newRecords.length === 0) return;
 
@@ -69,14 +105,26 @@ export default function App() {
     return <HomePage onSelectShift={handleShiftSelect} />;
   }
 
+  if (page.name === 'date') {
+    return (
+      <DatePage
+        shift={page.shift}
+        onSelectDate={date => handleDateSelect(page.shift, date)}
+        onBack={() => setPage({ name: 'home' })}
+      />
+    );
+  }
+
   if (page.name === 'category') {
     return (
       <CategoryPage
         shift={page.shift}
+        selectedDate={page.selectedDate}
         categories={categories}
         records={records}
-        onSelectCategory={cat => handleCategorySelect(page.shift, cat)}
-        onBack={() => setPage({ name: 'home' })}
+        drafts={drafts}
+        onSelectCategory={cat => handleCategorySelect(page.shift, page.selectedDate, cat)}
+        onBack={() => setPage({ name: 'date', shift: page.shift })}
         onGoHistory={() => setPage({ name: 'history' })}
         onGoAdmin={() => setPage({ name: 'admin' })}
       />
@@ -87,9 +135,21 @@ export default function App() {
     return (
       <CheckPage
         shift={page.shift}
+        selectedDate={page.selectedDate}
         category={page.category}
+        initialDeficits={page.initialDeficits}
         onComplete={handleCheckComplete}
-        onBack={() => setPage({ name: 'category', shift: page.shift })}
+        onInterrupt={items => {
+          saveDraft({
+            date      : page.selectedDate,
+            shift     : page.shift,
+            categoryId: page.category.id,
+            items,
+            timestamp : new Date().toISOString(),
+          });
+          setPage({ name: 'category', shift: page.shift, selectedDate: page.selectedDate });
+        }}
+        onBack={() => setPage({ name: 'category', shift: page.shift, selectedDate: page.selectedDate })}
       />
     );
   }
