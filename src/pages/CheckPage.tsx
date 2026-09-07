@@ -103,7 +103,7 @@ export default function CheckPage({ shift, selectedDate, category, initialDefici
           <button onClick={onBack} className="text-white text-xl px-1">←</button>
           <div>
             <h1 className="text-lg font-bold">{category.name}</h1>
-            <p className="text-xs opacity-80">{shiftLabel}　カードまたは[−]で不足を記録</p>
+            <p className="text-xs opacity-80">{shiftLabel}　[−]で在庫数を減らす、[＋]で戻す</p>
           </div>
         </div>
       </div>
@@ -143,10 +143,10 @@ export default function CheckPage({ shift, selectedDate, category, initialDefici
                     ＋
                   </button>
 
-                  <span className={`w-12 text-center text-2xl font-bold tabular-nums ${
-                    item.deficit > 0 ? 'text-red-500' : 'text-gray-300'
+                  <span className={`w-14 text-center text-2xl font-bold tabular-nums ${
+                    item.deficit > 0 ? 'text-red-500' : 'text-gray-400'
                   }`}>
-                    {item.deficit > 0 ? `−${item.deficit}` : '−'}
+                    {item.standardStock - item.deficit}
                   </span>
 
                   <button
@@ -162,7 +162,7 @@ export default function CheckPage({ shift, selectedDate, category, initialDefici
         </div>
 
         <p className="text-center text-xs text-gray-400 mt-4">
-          カードをタップまたは[−]で不足を記録、[＋]で取り消し
+          カードをタップまたは[−]で在庫数を減らす、[＋]で戻す
         </p>
       </div>
 

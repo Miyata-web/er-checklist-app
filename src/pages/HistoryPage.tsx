@@ -90,10 +90,11 @@ function formatDate(dateStr: string): string {
   return `${d.getMonth() + 1}/${d.getDate()}（${dow}）`;
 }
 
-function GroupRow({ group, isOpen, onToggle }: {
+function GroupRow({ group, isOpen, onToggle, suppressInlineDeficit }: {
   group: GroupEntry;
   isOpen: boolean;
   onToggle: () => void;
+  suppressInlineDeficit?: boolean;
 }) {
   const hasDone = group.records.length > 0;
   const noDeficit = hasDone && !group.hasDeficit;
@@ -126,7 +127,7 @@ function GroupRow({ group, isOpen, onToggle }: {
       </div>
 
       {/* 不足項目インライン */}
-      {hasDone && !isOpen && group.hasDeficit && (
+      {hasDone && !isOpen && group.hasDeficit && !suppressInlineDeficit && (
         <div className="mt-0.5 pl-2">
           {group.records.filter(r => r.diff < 0).map(r => (
             <p key={r.recordId} className="text-xs text-red-500">
@@ -162,10 +163,11 @@ function GroupRow({ group, isOpen, onToggle }: {
   );
 }
 
-function ShiftSection({ label, data, color }: {
+function ShiftSection({ label, data, color, suppressInlineDeficits }: {
   label: string;
   data: ShiftData;
   color: 'blue' | 'indigo';
+  suppressInlineDeficits?: boolean;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const toggle = (id: string) => setOpenId(prev => prev === id ? null : id);
@@ -179,7 +181,7 @@ function ShiftSection({ label, data, color }: {
       ) : (
         <>
           {data.groups.map(g => (
-            <GroupRow key={g.groupId} group={g} isOpen={openId === g.groupId} onToggle={() => toggle(g.groupId)} />
+            <GroupRow key={g.groupId} group={g} isOpen={openId === g.groupId} onToggle={() => toggle(g.groupId)} suppressInlineDeficit={suppressInlineDeficits} />
           ))}
           {data.others.map(o => (
             <div key={o.categoryId} className="mb-2">
@@ -272,7 +274,7 @@ export default function HistoryPage({ records, groupId, shift, selectedDate, con
                   {formatDate(day.date)}
                 </p>
                 <div className="flex gap-4">
-                  <ShiftSection label="☀️ 日勤" data={day.day}   color="blue"   />
+                  <ShiftSection label="☀️ 日勤" data={day.day}   color="blue"   suppressInlineDeficits={day.night.hasAny} />
                   <div className="w-px bg-gray-100 shrink-0" />
                   <ShiftSection label="🌙 夜勤" data={day.night} color="indigo" />
                 </div>
