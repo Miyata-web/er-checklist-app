@@ -104,6 +104,11 @@ function GroupRow({ group, isOpen, onToggle, suppressInlineDeficit }: {
     : group.hasDeficit ? 'text-orange-500'
     : 'text-green-600';
 
+  // チェック者名（重複排除）
+  const checkerNames = [...new Set(
+    group.records.map(r => r.checkerName).filter((n): n is string => !!n && n.trim() !== '')
+  )];
+
   const catMap = new Map<string, { name: string; records: CheckRecord[] }>();
   group.records.forEach(r => {
     if (!catMap.has(r.categoryId)) catMap.set(r.categoryId, { name: r.categoryName, records: [] });
@@ -116,7 +121,7 @@ function GroupRow({ group, isOpen, onToggle, suppressInlineDeficit }: {
         <div>
           <span className={`text-xs font-bold ${color}`}>{icon} {group.label}</span>
           {noDeficit && (
-            <span className="ml-2 text-xs text-green-500 font-medium">不足なし</span>
+            <span className="ml-2 text-xs text-green-500 font-medium">差分なし</span>
           )}
         </div>
         {hasDone && (
@@ -125,6 +130,11 @@ function GroupRow({ group, isOpen, onToggle, suppressInlineDeficit }: {
           </button>
         )}
       </div>
+
+      {/* チェック者表示 */}
+      {hasDone && checkerNames.length > 0 && (
+        <p className="text-xs text-gray-400 mt-0.5 pl-4">チェック者: {checkerNames.join(', ')}</p>
+      )}
 
       {/* 不足項目インライン（同名品目を合算） */}
       {hasDone && !isOpen && group.hasDeficit && !suppressInlineDeficit && (() => {
@@ -166,7 +176,7 @@ function GroupRow({ group, isOpen, onToggle, suppressInlineDeficit }: {
                       {standardStock + diff}/{standardStock}
                       {diff < 0
                         ? <span className="ml-1">({diff})</span>
-                        : <span className="ml-1 text-green-500">不足なし</span>
+                        : <span className="ml-1 text-green-500">差分なし</span>
                       }
                     </span>
                   </div>
