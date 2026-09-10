@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import type { Category, CheckItem, Frequency } from '../types';
+import type { Category, CheckItem, CheckRecord, Frequency } from '../types';
 
 interface Props {
   categories: Category[];
+  records: CheckRecord[];
   onSave: (categories: Category[]) => void;
   onBack: () => void;
   gasEnabled?: boolean;
@@ -19,7 +20,7 @@ function generateId(): string {
   return `id_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
-export default function AdminPage({ categories, onSave, onBack, gasEnabled }: Props) {
+export default function AdminPage({ categories, records, onSave, onBack, gasEnabled }: Props) {
   const [cats, setCats] = useState<Category[]>(categories);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [saved, setSaved]     = useState(false);
@@ -95,6 +96,28 @@ export default function AdminPage({ categories, onSave, onBack, gasEnabled }: Pr
     );
   };
 
+  const exportCsv = () => {
+    const DOW = '日月火水木金土';
+    const header = '日付,曜日,シフト,記録者,カテゴリ,品目名,定数,在庫数,差分';
+    const rows = [...records]
+      .sort((a, b) => a.date.localeCompare(b.date) || a.timestamp.localeCompare(b.timestamp))
+      .map(r => {
+        const d   = new Date(r.date + 'T00:00:00');
+        const dow = DOW[d.getDay()];
+        const shift = r.shift === 'day' ? '日勤' : '夜勤';
+        const escape = (s: string) => `"${s.replace(/"/g, '""')}"`;
+        return [r.date, dow, shift, escape(r.checkerName ?? ''), escape(r.categoryName), escape(r.itemName), r.standardStock, r.inputValue, r.diff].join(',');
+      });
+    const csv = '\uFEFF' + header + '\n' + rows.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `checklist_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <div className="bg-white border-b border-gray-200 px-4 py-4">
@@ -127,6 +150,23 @@ export default function AdminPage({ categories, onSave, onBack, gasEnabled }: Pr
       </div>
 
       <div className="flex-1 p-4 overflow-y-auto">
+
+        {/* CSV出力 */}
+        <div className="bg-white rounded-2xl shadow-sm p-4 mb-4">
+          <h2 className="text-sm font-bold text-gray-600 mb-3">データ出力</h2>
+          <p className="text-xs text-gray-400 mb-3">
+            保存中の記録（7日間）をCSV形式でダウンロードします。<br />
+            日付・シフト・記録者・品目・在庫数・差分を含みます。
+          </p>
+          <button
+            onClick={exportCsv}
+            disabled={records.length === 0}
+            className="w-full py-3 rounded-xl bg-green-500 text-white text-sm font-bold active:bg-green-600 transition-colors disabled:opacity-40"
+          >
+            📥 CSVダウンロード（{records.length}件）
+          </button>
+        </div>
+
         <div className="flex flex-col gap-3">
           {cats.map(cat => (
             <div key={cat.id} className="bg-white rounded-2xl shadow-sm overflow-hidden">

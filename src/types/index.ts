@@ -51,6 +51,7 @@ export interface CheckRecord {
   standardStock: number;
   diff: number;
   timestamp: string;
+  checkerName: string;
 }
 
 export interface DailyRecord {

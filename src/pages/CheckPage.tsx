@@ -13,12 +13,13 @@ interface Props {
   selectedDate: string;
   category: Category;
   initialDeficits: Record<string, number>;
+  checkerName: string;
   onComplete: (records: CheckRecord[]) => void;
   onInterrupt: (items: { itemId: string; deficit: number }[]) => void;
   onBack: () => void;
 }
 
-export default function CheckPage({ shift, selectedDate, category, initialDeficits, onComplete, onInterrupt, onBack }: Props) {
+export default function CheckPage({ shift, selectedDate, category, initialDeficits, checkerName, onComplete, onInterrupt, onBack }: Props) {
   const [items, setItems] = useState<ItemState[]>(
     category.items.map(item => ({
       id           : item.id,
@@ -78,6 +79,7 @@ export default function CheckPage({ shift, selectedDate, category, initialDefici
       standardStock: item.standardStock,
       diff         : -item.deficit,
       timestamp    : new Date().toISOString(),
+      checkerName,
     }));
     setSubmitted(true);
     onComplete(newRecords);
