@@ -50,21 +50,6 @@ export default function CheckPage({ shift, selectedDate, category, initialDefici
     setEditingIndex(null);
   };
 
-  const addDeficit = (index: number) => {
-    setItems(prev =>
-      prev.map((item, i) =>
-        i === index ? { ...item, deficit: item.deficit + 1 } : item
-      )
-    );
-  };
-
-  const reduceDeficit = (index: number) => {
-    setItems(prev =>
-      prev.map((item, i) =>
-        i === index ? { ...item, deficit: Math.max(0, item.deficit - 1) } : item
-      )
-    );
-  };
 
   const handleComplete = () => {
     const newRecords: CheckRecord[] = items.map(item => ({
@@ -123,7 +108,7 @@ export default function CheckPage({ shift, selectedDate, category, initialDefici
           <button onClick={onBack} className="text-white text-xl px-1">←</button>
           <div>
             <h1 className="text-lg font-bold">{category.name}</h1>
-            <p className="text-xs opacity-80">{shiftLabel}　[−]で在庫数を減らす、[＋]で戻す</p>
+            <p className="text-xs opacity-80">{shiftLabel}　数字をタップして在庫数を入力</p>
           </div>
         </div>
       </div>
@@ -140,8 +125,7 @@ export default function CheckPage({ shift, selectedDate, category, initialDefici
           {items.map((item, index) => (
             <div
               key={item.id}
-              onClick={() => editingIndex !== index && addDeficit(index)}
-              className={`bg-white rounded-2xl shadow-sm p-4 cursor-pointer select-none active:scale-98 transition-transform ${
+              className={`bg-white rounded-2xl shadow-sm p-4 select-none ${
                 item.deficit > 0 ? 'border-2 border-red-300' : 'border-2 border-transparent'
               }`}
             >
@@ -151,18 +135,7 @@ export default function CheckPage({ shift, selectedDate, category, initialDefici
                   <p className="text-xs text-gray-400 mt-0.5">定数: {item.standardStock}</p>
                 </div>
 
-                <div
-                  className="flex items-center gap-3"
-                  onClick={e => e.stopPropagation()}
-                >
-                  <button
-                    onClick={() => reduceDeficit(index)}
-                    disabled={item.deficit === 0}
-                    className="w-10 h-10 rounded-full bg-gray-100 text-gray-600 text-xl font-bold flex items-center justify-center active:bg-gray-200 disabled:opacity-30 transition-colors"
-                  >
-                    ＋
-                  </button>
-
+                <div onClick={e => e.stopPropagation()}>
                   {editingIndex === index ? (
                     <input
                       type="number"
@@ -174,25 +147,18 @@ export default function CheckPage({ shift, selectedDate, category, initialDefici
                       onKeyDown={e => e.key === 'Enter' && commitEdit(index)}
                       onFocus={e => e.target.select()}
                       autoFocus
-                      className="w-14 text-center text-2xl font-bold tabular-nums text-red-500 border-b-2 border-red-400 bg-transparent outline-none"
+                      className="w-16 text-center text-2xl font-bold tabular-nums text-red-500 border-b-2 border-red-400 bg-transparent outline-none"
                     />
                   ) : (
                     <span
                       onClick={() => startEdit(index)}
-                      className={`w-14 text-center text-2xl font-bold tabular-nums underline decoration-dotted cursor-pointer ${
+                      className={`block w-16 text-center text-2xl font-bold tabular-nums underline decoration-dotted cursor-pointer ${
                         item.deficit > 0 ? 'text-red-500' : 'text-gray-400'
                       }`}
                     >
                       {item.standardStock - item.deficit}
                     </span>
                   )}
-
-                  <button
-                    onClick={() => addDeficit(index)}
-                    className="w-10 h-10 rounded-full bg-red-50 text-red-500 text-xl font-bold flex items-center justify-center active:bg-red-100 transition-colors"
-                  >
-                    −
-                  </button>
                 </div>
               </div>
             </div>
@@ -200,7 +166,7 @@ export default function CheckPage({ shift, selectedDate, category, initialDefici
         </div>
 
         <p className="text-center text-xs text-gray-400 mt-4">
-          カードをタップまたは[−]で在庫数を減らす、[＋]で戻す
+          数字をタップして現在の在庫数を直接入力してください
         </p>
       </div>
 

@@ -126,37 +126,54 @@ function GroupRow({ group, isOpen, onToggle, suppressInlineDeficit }: {
         )}
       </div>
 
-      {/* 不足項目インライン */}
-      {hasDone && !isOpen && group.hasDeficit && !suppressInlineDeficit && (
-        <div className="mt-0.5 pl-2">
-          {group.records.filter(r => r.diff < 0).map(r => (
-            <p key={r.recordId} className="text-xs text-red-500">
-              {r.itemName} <span className="font-bold">{r.diff}</span>
-            </p>
-          ))}
-        </div>
-      )}
+      {/* 不足項目インライン（同名品目を合算） */}
+      {hasDone && !isOpen && group.hasDeficit && !suppressInlineDeficit && (() => {
+        const merged = new Map<string, number>();
+        group.records.filter(r => r.diff < 0).forEach(r => {
+          merged.set(r.itemName, (merged.get(r.itemName) ?? 0) + r.diff);
+        });
+        return (
+          <div className="mt-0.5 pl-2">
+            {Array.from(merged.entries()).map(([name, diff]) => (
+              <p key={name} className="text-xs text-red-500">
+                {name} <span className="font-bold">{diff}</span>
+              </p>
+            ))}
+          </div>
+        );
+      })()}
 
-      {/* 詳細展開 */}
+      {/* 詳細展開（同名品目を合算） */}
       {isOpen && (
         <div className="mt-1 bg-gray-50 rounded-xl p-2 space-y-2">
-          {Array.from(catMap.values()).map(cat => (
-            <div key={cat.name}>
-              <p className="text-xs font-bold text-gray-500 mb-0.5">{cat.name}</p>
-              {cat.records.map(r => (
-                <div key={r.recordId} className="flex justify-between text-xs py-0.5">
-                  <span className="text-gray-600 mr-2 truncate">{r.itemName}</span>
-                  <span className={`shrink-0 ${r.diff < 0 ? 'text-red-500 font-bold' : 'text-gray-400'}`}>
-                    {r.inputValue}/{r.standardStock}
-                    {r.diff < 0
-                      ? <span className="ml-1">({r.diff})</span>
-                      : <span className="ml-1 text-green-500">不足なし</span>
-                    }
-                  </span>
-                </div>
-              ))}
-            </div>
-          ))}
+          {Array.from(catMap.values()).map(cat => {
+            const itemMap = new Map<string, { standardStock: number; diff: number }>();
+            cat.records.forEach(r => {
+              const prev = itemMap.get(r.itemName);
+              if (prev) {
+                itemMap.set(r.itemName, { standardStock: r.standardStock, diff: prev.diff + r.diff });
+              } else {
+                itemMap.set(r.itemName, { standardStock: r.standardStock, diff: r.diff });
+              }
+            });
+            return (
+              <div key={cat.name}>
+                <p className="text-xs font-bold text-gray-500 mb-0.5">{cat.name}</p>
+                {Array.from(itemMap.entries()).map(([name, { standardStock, diff }]) => (
+                  <div key={name} className="flex justify-between text-xs py-0.5">
+                    <span className="text-gray-600 mr-2 truncate">{name}</span>
+                    <span className={`shrink-0 ${diff < 0 ? 'text-red-500 font-bold' : 'text-gray-400'}`}>
+                      {standardStock + diff}/{standardStock}
+                      {diff < 0
+                        ? <span className="ml-1">({diff})</span>
+                        : <span className="ml-1 text-green-500">不足なし</span>
+                      }
+                    </span>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
