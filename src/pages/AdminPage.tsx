@@ -34,6 +34,19 @@ export default function AdminPage({ categories, records, onSave, onBack, gasEnab
   const [exportFrom, setExportFrom] = useState(firstOfMonth);
   const [exportTo,   setExportTo]   = useState(todayStr);
   const [managerName, setManagerName] = useState('');
+  const [selectedCatIds, setSelectedCatIds] = useState<Set<string>>(
+    () => new Set(categories.map(c => c.id))
+  );
+  const toggleCat = (id: string) =>
+    setSelectedCatIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  const toggleAll = () =>
+    setSelectedCatIds(prev =>
+      prev.size === categories.length ? new Set() : new Set(categories.map(c => c.id))
+    );
 
   const handleSave = () => {
     onSave(cats);
@@ -104,7 +117,7 @@ export default function AdminPage({ categories, records, onSave, onBack, gasEnab
     );
   };
 
-  const buildPivotData = (from: string, to: string) => {
+  const buildPivotData = (from: string, to: string, filterIds?: Set<string>) => {
     const DOW = '日月火水木金土';
     const filtered = records.filter(r => r.date >= from && r.date <= to);
 
@@ -133,6 +146,7 @@ export default function AdminPage({ categories, records, onSave, onBack, gasEnab
     });
 
     return categories
+      .filter(cat => !filterIds || filterIds.has(cat.id))
       .map(cat => {
         const catRecords = recByCat.get(cat.id);
         if (!catRecords || catRecords.length === 0) return null;
@@ -160,7 +174,7 @@ export default function AdminPage({ categories, records, onSave, onBack, gasEnab
   };
 
   const exportPivotCsv = () => {
-    const sections = buildPivotData(exportFrom, exportTo);
+    const sections = buildPivotData(exportFrom, exportTo, selectedCatIds);
     if (sections.length === 0) return;
 
     const esc = (s: string) => `"${String(s).replace(/"/g, '""')}"`;
@@ -190,7 +204,7 @@ export default function AdminPage({ categories, records, onSave, onBack, gasEnab
   };
 
   const printPreview = () => {
-    const sections = buildPivotData(exportFrom, exportTo);
+    const sections = buildPivotData(exportFrom, exportTo, selectedCatIds);
     if (sections.length === 0) return;
 
     const DOW = '日月火水木金土';
@@ -342,6 +356,29 @@ ${tableHtml}
               placeholder="師長名（省略可）"
               className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-300"
             />
+          </div>
+
+          {/* カテゴリ選択 */}
+          <div className="mb-3">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-bold text-gray-500">出力するカテゴリ</span>
+              <button onClick={toggleAll} className="text-xs text-blue-500 underline">
+                {selectedCatIds.size === categories.length ? '全解除' : '全選択'}
+              </button>
+            </div>
+            <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
+              {categories.map(cat => (
+                <label key={cat.id} className="flex items-center gap-2 cursor-pointer py-1 px-2 rounded-lg hover:bg-gray-50">
+                  <input
+                    type="checkbox"
+                    checked={selectedCatIds.has(cat.id)}
+                    onChange={() => toggleCat(cat.id)}
+                    className="w-4 h-4 accent-blue-500"
+                  />
+                  <span className="text-xs text-gray-700">{cat.name}</span>
+                </label>
+              ))}
+            </div>
           </div>
 
           <p className="text-xs text-gray-400 mb-3">
