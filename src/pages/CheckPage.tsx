@@ -28,8 +28,26 @@ export default function CheckPage({ shift, selectedDate, category, initialDefici
     }))
   );
   const [submitted, setSubmitted] = useState(false);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editValue, setEditValue] = useState('');
 
   const shiftLabel = shift === 'day' ? '☀️ 日勤' : '🌙 夜勤';
+
+  const startEdit = (index: number) => {
+    setEditingIndex(index);
+    setEditValue(String(items[index].standardStock - items[index].deficit));
+  };
+
+  const commitEdit = (index: number) => {
+    const parsed = parseInt(editValue, 10);
+    if (!isNaN(parsed)) {
+      const clamped = Math.min(Math.max(0, parsed), items[index].standardStock);
+      setItems(prev => prev.map((item, i) =>
+        i === index ? { ...item, deficit: item.standardStock - clamped } : item
+      ));
+    }
+    setEditingIndex(null);
+  };
 
   const addDeficit = (index: number) => {
     setItems(prev =>
@@ -120,7 +138,7 @@ export default function CheckPage({ shift, selectedDate, category, initialDefici
           {items.map((item, index) => (
             <div
               key={item.id}
-              onClick={() => addDeficit(index)}
+              onClick={() => editingIndex !== index && addDeficit(index)}
               className={`bg-white rounded-2xl shadow-sm p-4 cursor-pointer select-none active:scale-98 transition-transform ${
                 item.deficit > 0 ? 'border-2 border-red-300' : 'border-2 border-transparent'
               }`}
@@ -143,11 +161,29 @@ export default function CheckPage({ shift, selectedDate, category, initialDefici
                     ＋
                   </button>
 
-                  <span className={`w-14 text-center text-2xl font-bold tabular-nums ${
-                    item.deficit > 0 ? 'text-red-500' : 'text-gray-400'
-                  }`}>
-                    {item.standardStock - item.deficit}
-                  </span>
+                  {editingIndex === index ? (
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={editValue}
+                      onChange={e => setEditValue(e.target.value)}
+                      onBlur={() => commitEdit(index)}
+                      onKeyDown={e => e.key === 'Enter' && commitEdit(index)}
+                      onFocus={e => e.target.select()}
+                      autoFocus
+                      className="w-14 text-center text-2xl font-bold tabular-nums text-red-500 border-b-2 border-red-400 bg-transparent outline-none"
+                    />
+                  ) : (
+                    <span
+                      onClick={() => startEdit(index)}
+                      className={`w-14 text-center text-2xl font-bold tabular-nums underline decoration-dotted cursor-pointer ${
+                        item.deficit > 0 ? 'text-red-500' : 'text-gray-400'
+                      }`}
+                    >
+                      {item.standardStock - item.deficit}
+                    </span>
+                  )}
 
                   <button
                     onClick={() => addDeficit(index)}
