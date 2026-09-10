@@ -27,6 +27,14 @@ export default function AdminPage({ categories, records, onSave, onBack, gasEnab
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState('');
 
+  // エクスポート設定
+  const today = new Date();
+  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+  const todayStr = today.toISOString().slice(0, 10);
+  const [exportFrom, setExportFrom] = useState(firstOfMonth);
+  const [exportTo,   setExportTo]   = useState(todayStr);
+  const [managerName, setManagerName] = useState('');
+
   const handleSave = () => {
     onSave(cats);
     setSaved(true);
@@ -96,13 +104,12 @@ export default function AdminPage({ categories, records, onSave, onBack, gasEnab
     );
   };
 
-  const exportPivotCsv = () => {
+  const buildPivotData = (from: string, to: string) => {
     const DOW = '日月火水木金土';
+    const filtered = records.filter(r => r.date >= from && r.date <= to);
 
-    // 直近14日分のユニーク(date, shift)列を日付昇順・日勤→夜勤順で取得
-    const allDates = [...new Set(records.map(r => r.date))].sort().slice(-14);
     const cols = [...new Set(
-      records.filter(r => allDates.includes(r.date)).map(r => `${r.date}|${r.shift}`)
+      filtered.map(r => `${r.date}|${r.shift}`)
     )].sort((a, b) => {
       const [ad, as_] = a.split('|');
       const [bd, bs]  = b.split('|');
@@ -110,68 +117,167 @@ export default function AdminPage({ categories, records, onSave, onBack, gasEnab
       return (as_ === 'day' ? 0 : 1) - (bs === 'day' ? 0 : 1);
     });
 
-    if (cols.length === 0) return;
-
-    const esc = (s: string) => `"${String(s).replace(/"/g, '""')}"`;
-
-    const dateHeaderCells = cols.map(c => {
+    const colHeaders = cols.map(c => {
       const d = new Date(c.split('|')[0] + 'T00:00:00');
-      return esc(`${d.getMonth()+1}/${d.getDate()}(${DOW[d.getDay()]})`);
+      return {
+        date : `${d.getMonth()+1}/${d.getDate()}(${DOW[d.getDay()]})`,
+        shift: c.split('|')[1] === 'day' ? '日勤' : '夜勤',
+        key  : c,
+      };
     });
-    const shiftHeaderCells = cols.map(c => esc(c.split('|')[1] === 'day' ? '日勤' : '夜勤'));
 
-    // カテゴリごとにレコードをグループ化（categoriesの順序に合わせる）
-    const recByCat = new Map<string, typeof records>();
-    records.forEach(r => {
+    const recByCat = new Map<string, typeof filtered>();
+    filtered.forEach(r => {
       if (!recByCat.has(r.categoryId)) recByCat.set(r.categoryId, []);
       recByCat.get(r.categoryId)!.push(r);
     });
 
-    const sections: string[] = [];
+    return categories
+      .map(cat => {
+        const catRecords = recByCat.get(cat.id);
+        if (!catRecords || catRecords.length === 0) return null;
 
-    for (const cat of categories) {
-      const catRecords = recByCat.get(cat.id);
-      if (!catRecords || catRecords.length === 0) continue;
+        const itemRows = cat.items.map(item => ({
+          name        : item.name,
+          isControlled: !!item.isControlled,
+          cells       : cols.map(col => {
+            const [date, shift] = col.split('|') as [string, string];
+            const rec = catRecords.find(r => r.itemId === item.id && r.date === date && r.shift === shift);
+            if (!rec) return '';
+            return rec.diff === 0 ? '✓' : String(rec.diff);
+          }),
+        }));
 
-      const lines: string[] = [];
-      // カテゴリ名行
-      lines.push([esc(cat.name), '', ...Array(cols.length).fill('')].join(','));
-      // 日付行
-      lines.push(['品目名', '劇薬', ...dateHeaderCells].join(','));
-      // シフト行
-      lines.push(['', '', ...shiftHeaderCells].join(','));
-
-      // 品目行
-      for (const item of cat.items) {
-        const cells = cols.map(col => {
+        const checkerRow = cols.map(col => {
           const [date, shift] = col.split('|') as [string, string];
-          const rec = catRecords.find(r => r.itemId === item.id && r.date === date && r.shift === shift);
-          if (!rec) return '';
-          return rec.diff === 0 ? '✓' : String(rec.diff);
+          const rec = catRecords.find(r => r.date === date && r.shift === shift);
+          return rec?.checkerName ?? '';
         });
-        lines.push([esc(item.name), item.isControlled ? '劇' : '', ...cells].join(','));
-      }
 
-      // チェック者行
-      const checkerCells = cols.map(col => {
-        const [date, shift] = col.split('|') as [string, string];
-        const rec = catRecords.find(r => r.date === date && r.shift === shift);
-        return rec?.checkerName ? esc(rec.checkerName) : '';
+        return { catName: cat.name, colHeaders, itemRows, checkerRow };
+      })
+      .filter((s): s is NonNullable<typeof s> => s !== null);
+  };
+
+  const exportPivotCsv = () => {
+    const sections = buildPivotData(exportFrom, exportTo);
+    if (sections.length === 0) return;
+
+    const esc = (s: string) => `"${String(s).replace(/"/g, '""')}"`;
+    const csvSections = sections.map(({ catName, colHeaders, itemRows, checkerRow }) => {
+      const lines: string[] = [];
+      lines.push([esc(catName), '', ...Array(colHeaders.length).fill('')].join(','));
+      lines.push(['品目名', '劇薬', ...colHeaders.map(h => esc(h.date))].join(','));
+      lines.push(['', '', ...colHeaders.map(h => esc(h.shift))].join(','));
+      itemRows.forEach(row => {
+        lines.push([esc(row.name), row.isControlled ? '劇' : '', ...row.cells].join(','));
       });
-      lines.push(['チェック者', '', ...checkerCells].join(','));
+      lines.push(['チェック者', '', ...checkerRow.map(n => esc(n))].join(','));
+      if (managerName.trim()) {
+        lines.push([esc(`師長: ${managerName.trim()}`), '', ...Array(colHeaders.length).fill('')].join(','));
+      }
+      return lines.join('\n');
+    });
 
-      sections.push(lines.join('\n'));
-    }
-
-    const csv = '\uFEFF' + sections.join('\n\n');
+    const csv = '\uFEFF' + csvSections.join('\n\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href     = url;
-    a.download = `checklist_pivot_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `checklist_${exportFrom}_${exportTo}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  const printPreview = () => {
+    const sections = buildPivotData(exportFrom, exportTo);
+    if (sections.length === 0) return;
+
+    const DOW = '日月火水木金土';
+    const fromD = new Date(exportFrom + 'T00:00:00');
+    const toD   = new Date(exportTo   + 'T00:00:00');
+    const fmtDate = (d: Date) => `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日(${DOW[d.getDay()]})`;
+
+    const tableHtml = sections.map(({ catName, colHeaders, itemRows, checkerRow }) => {
+      const thDate  = colHeaders.map(h => `<th class="date-cell">${h.date}</th>`).join('');
+      const thShift = colHeaders.map(h => `<th class="shift-cell">${h.shift}</th>`).join('');
+      const itemTrs = itemRows.map(row => {
+        const cells = row.cells.map(c => {
+          const cls = c === '✓' ? 'ok' : c.startsWith('-') ? 'ng' : 'empty';
+          return `<td class="${cls}">${c}</td>`;
+        }).join('');
+        return `<tr><td class="item-name">${row.name}</td><td class="controlled">${row.isControlled ? '劇' : ''}</td>${cells}</tr>`;
+      }).join('');
+      const checkerTds = checkerRow.map(n => `<td class="checker-cell">${n}</td>`).join('');
+      return `
+        <div class="category-block">
+          <h3>${catName}</h3>
+          <table>
+            <thead>
+              <tr><th class="item-name-h">品目名</th><th class="controlled-h">劇薬</th>${thDate}</tr>
+              <tr><th></th><th></th>${thShift}</tr>
+            </thead>
+            <tbody>
+              ${itemTrs}
+              <tr class="checker-row"><td class="item-name">チェック者</td><td></td>${checkerTds}</tr>
+            </tbody>
+          </table>
+        </div>`;
+    }).join('');
+
+    const stampHtml = managerName.trim()
+      ? `<div class="stamp"><div class="stamp-inner"><div class="stamp-label">師長承認</div><div class="stamp-name">${managerName.trim()}</div></div></div>`
+      : '';
+
+    const html = `<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>救急カート薬剤チェック記録</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Hiragino Sans', 'Yu Gothic', sans-serif; font-size: 10px; padding: 12mm; color: #111; }
+  h1 { font-size: 14px; text-align: center; margin-bottom: 4px; }
+  .period { font-size: 10px; text-align: center; color: #555; margin-bottom: 12px; }
+  .print-btn { display: block; margin: 0 auto 16px; padding: 8px 24px; background: #1e40af; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .category-block { margin-bottom: 16px; page-break-inside: avoid; }
+  h3 { font-size: 11px; background: #1e40af; color: white; padding: 3px 6px; margin-bottom: 0; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #ccc; padding: 2px 4px; text-align: center; white-space: nowrap; }
+  .item-name, .item-name-h { text-align: left; min-width: 100px; max-width: 150px; white-space: normal; word-break: break-all; }
+  .controlled, .controlled-h { width: 24px; color: #dc2626; font-weight: bold; }
+  .date-cell { background: #eff6ff; font-weight: bold; }
+  .shift-cell { background: #f0f9ff; }
+  .ok { color: #16a34a; font-weight: bold; }
+  .ng { color: #dc2626; font-weight: bold; }
+  .empty { color: #ddd; }
+  .checker-row td { background: #f9fafb; font-size: 9px; color: #555; }
+  .checker-cell { font-size: 9px; }
+  .footer { display: flex; justify-content: flex-end; align-items: center; margin-top: 16px; gap: 16px; }
+  .footer-label { font-size: 10px; color: #555; }
+  .stamp { width: 64px; height: 64px; border: 3px solid #dc2626; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+  .stamp-inner { text-align: center; color: #dc2626; line-height: 1.3; }
+  .stamp-label { font-size: 8px; border-bottom: 1px solid #dc2626; padding-bottom: 2px; margin-bottom: 2px; }
+  .stamp-name { font-size: 12px; font-weight: bold; }
+  @media print { .print-btn { display: none; } }
+</style>
+</head>
+<body>
+<h1>救急カート薬剤チェック記録</h1>
+<p class="period">${fmtDate(fromD)} 〜 ${fmtDate(toD)}</p>
+<button class="print-btn" onclick="window.print()">🖨️ 印刷する</button>
+${tableHtml}
+<div class="footer">
+  <div class="footer-label">管理者確認</div>
+  ${stampHtml}
+</div>
+</body>
+</html>`;
+
+    const win = window.open('', '_blank');
+    if (win) { win.document.write(html); win.document.close(); }
+  };
+
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -206,20 +312,58 @@ export default function AdminPage({ categories, records, onSave, onBack, gasEnab
 
       <div className="flex-1 p-4 overflow-y-auto">
 
-        {/* CSV出力 */}
+        {/* データ出力 */}
         <div className="bg-white rounded-2xl shadow-sm p-4 mb-4">
           <h2 className="text-sm font-bold text-gray-600 mb-3">データ出力</h2>
+
+          {/* 期間選択 */}
+          <div className="flex items-center gap-2 mb-3">
+            <input
+              type="date"
+              value={exportFrom}
+              onChange={e => setExportFrom(e.target.value)}
+              className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-300"
+            />
+            <span className="text-xs text-gray-400">〜</span>
+            <input
+              type="date"
+              value={exportTo}
+              onChange={e => setExportTo(e.target.value)}
+              className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-300"
+            />
+          </div>
+
+          {/* 師長名 */}
+          <div className="mb-3">
+            <input
+              type="text"
+              value={managerName}
+              onChange={e => setManagerName(e.target.value)}
+              placeholder="師長名（省略可）"
+              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-300"
+            />
+          </div>
+
           <p className="text-xs text-gray-400 mb-3">
-            直近14日分を品目×日付のピボット形式で出力します。<br />
-            定数通りはレ点、不足はマイナス表記。カテゴリごとに区切られます。
+            品目×日付のピボット形式。定数通りはレ点、不足はマイナス表記。
           </p>
-          <button
-            onClick={exportPivotCsv}
-            disabled={records.length === 0}
-            className="w-full py-3 rounded-xl bg-green-500 text-white text-sm font-bold active:bg-green-600 transition-colors disabled:opacity-40"
-          >
-            📥 CSVダウンロード（{records.length}件）
-          </button>
+
+          <div className="flex gap-2">
+            <button
+              onClick={exportPivotCsv}
+              disabled={records.length === 0}
+              className="flex-1 py-3 rounded-xl bg-green-500 text-white text-sm font-bold active:bg-green-600 transition-colors disabled:opacity-40"
+            >
+              📥 CSV
+            </button>
+            <button
+              onClick={printPreview}
+              disabled={records.length === 0}
+              className="flex-1 py-3 rounded-xl bg-blue-500 text-white text-sm font-bold active:bg-blue-600 transition-colors disabled:opacity-40"
+            >
+              🖨️ 印刷プレビュー
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-col gap-3">

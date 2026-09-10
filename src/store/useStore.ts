@@ -7,7 +7,7 @@ const STORAGE_RECORDS    = 'er-checklist-records';
 const STORAGE_DRAFTS         = 'er-checklist-drafts';
 const STORAGE_CONFIRMATIONS  = 'er-checklist-confirmations';
 const STORAGE_VERSION    = 'er-checklist-data-version';
-const RETENTION_DAYS     = 7;
+const RETENTION_DAYS     = 60;
 
 // defaultData.ts のカテゴリ名・構成を変更した際にここを更新する
 const DATA_VERSION = '5';
