@@ -96,24 +96,79 @@ export default function AdminPage({ categories, records, onSave, onBack, gasEnab
     );
   };
 
-  const exportCsv = () => {
+  const exportPivotCsv = () => {
     const DOW = '日月火水木金土';
-    const header = '日付,曜日,シフト,記録者,カテゴリ,品目名,定数,在庫数,差分';
-    const rows = [...records]
-      .sort((a, b) => a.date.localeCompare(b.date) || a.timestamp.localeCompare(b.timestamp))
-      .map(r => {
-        const d   = new Date(r.date + 'T00:00:00');
-        const dow = DOW[d.getDay()];
-        const shift = r.shift === 'day' ? '日勤' : '夜勤';
-        const escape = (s: string) => `"${s.replace(/"/g, '""')}"`;
-        return [r.date, dow, shift, escape(r.checkerName ?? ''), escape(r.categoryName), escape(r.itemName), r.standardStock, r.inputValue, r.diff].join(',');
+
+    // 直近14日分のユニーク(date, shift)列を日付昇順・日勤→夜勤順で取得
+    const allDates = [...new Set(records.map(r => r.date))].sort().slice(-14);
+    const cols = [...new Set(
+      records.filter(r => allDates.includes(r.date)).map(r => `${r.date}|${r.shift}`)
+    )].sort((a, b) => {
+      const [ad, as_] = a.split('|');
+      const [bd, bs]  = b.split('|');
+      if (ad !== bd) return ad.localeCompare(bd);
+      return (as_ === 'day' ? 0 : 1) - (bs === 'day' ? 0 : 1);
+    });
+
+    if (cols.length === 0) return;
+
+    const esc = (s: string) => `"${String(s).replace(/"/g, '""')}"`;
+
+    const dateHeaderCells = cols.map(c => {
+      const d = new Date(c.split('|')[0] + 'T00:00:00');
+      return esc(`${d.getMonth()+1}/${d.getDate()}(${DOW[d.getDay()]})`);
+    });
+    const shiftHeaderCells = cols.map(c => esc(c.split('|')[1] === 'day' ? '日勤' : '夜勤'));
+
+    // カテゴリごとにレコードをグループ化（categoriesの順序に合わせる）
+    const recByCat = new Map<string, typeof records>();
+    records.forEach(r => {
+      if (!recByCat.has(r.categoryId)) recByCat.set(r.categoryId, []);
+      recByCat.get(r.categoryId)!.push(r);
+    });
+
+    const sections: string[] = [];
+
+    for (const cat of categories) {
+      const catRecords = recByCat.get(cat.id);
+      if (!catRecords || catRecords.length === 0) continue;
+
+      const lines: string[] = [];
+      // カテゴリ名行
+      lines.push([esc(cat.name), '', ...Array(cols.length).fill('')].join(','));
+      // 日付行
+      lines.push(['品目名', '劇薬', ...dateHeaderCells].join(','));
+      // シフト行
+      lines.push(['', '', ...shiftHeaderCells].join(','));
+
+      // 品目行
+      for (const item of cat.items) {
+        const cells = cols.map(col => {
+          const [date, shift] = col.split('|') as [string, string];
+          const rec = catRecords.find(r => r.itemId === item.id && r.date === date && r.shift === shift);
+          if (!rec) return '';
+          return rec.diff === 0 ? '✓' : String(rec.diff);
+        });
+        lines.push([esc(item.name), item.isControlled ? '劇' : '', ...cells].join(','));
+      }
+
+      // チェック者行
+      const checkerCells = cols.map(col => {
+        const [date, shift] = col.split('|') as [string, string];
+        const rec = catRecords.find(r => r.date === date && r.shift === shift);
+        return rec?.checkerName ? esc(rec.checkerName) : '';
       });
-    const csv = '\uFEFF' + header + '\n' + rows.join('\n');
+      lines.push(['チェック者', '', ...checkerCells].join(','));
+
+      sections.push(lines.join('\n'));
+    }
+
+    const csv = '\uFEFF' + sections.join('\n\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href     = url;
-    a.download = `checklist_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `checklist_pivot_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -155,11 +210,11 @@ export default function AdminPage({ categories, records, onSave, onBack, gasEnab
         <div className="bg-white rounded-2xl shadow-sm p-4 mb-4">
           <h2 className="text-sm font-bold text-gray-600 mb-3">データ出力</h2>
           <p className="text-xs text-gray-400 mb-3">
-            保存中の記録（7日間）をCSV形式でダウンロードします。<br />
-            日付・シフト・記録者・品目・在庫数・差分を含みます。
+            直近14日分を品目×日付のピボット形式で出力します。<br />
+            定数通りはレ点、不足はマイナス表記。カテゴリごとに区切られます。
           </p>
           <button
-            onClick={exportCsv}
+            onClick={exportPivotCsv}
             disabled={records.length === 0}
             className="w-full py-3 rounded-xl bg-green-500 text-white text-sm font-bold active:bg-green-600 transition-colors disabled:opacity-40"
           >
@@ -211,29 +266,40 @@ export default function AdminPage({ categories, records, onSave, onBack, gasEnab
                 <div className="border-t border-gray-100 p-4">
                   <div className="flex flex-col gap-2 mb-3">
                     {cat.items.map(item => (
-                      <div key={item.id} className="flex items-center gap-2 bg-gray-50 rounded-xl p-3">
-                        <input
-                          className="flex-1 bg-transparent text-sm text-gray-700 focus:outline-none"
-                          value={item.name}
-                          onChange={e => updateItem(cat.id, item.id, { name: e.target.value })}
-                          placeholder="項目名"
-                        />
-                        <div className="flex items-center gap-1">
-                          <span className="text-xs text-gray-400">基準:</span>
+                      <div key={item.id} className="flex flex-col gap-1 bg-gray-50 rounded-xl p-3">
+                        <div className="flex items-center gap-2">
                           <input
-                            type="number"
-                            className="w-14 text-center text-sm font-bold text-gray-700 bg-white rounded-lg border border-gray-200 py-1 focus:outline-none focus:border-blue-300"
-                            value={item.standardStock}
-                            min={0}
-                            onChange={e => updateItem(cat.id, item.id, { standardStock: Number(e.target.value) })}
+                            className="flex-1 bg-transparent text-sm text-gray-700 focus:outline-none"
+                            value={item.name}
+                            onChange={e => updateItem(cat.id, item.id, { name: e.target.value })}
+                            placeholder="項目名"
                           />
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-gray-400">基準:</span>
+                            <input
+                              type="number"
+                              className="w-14 text-center text-sm font-bold text-gray-700 bg-white rounded-lg border border-gray-200 py-1 focus:outline-none focus:border-blue-300"
+                              value={item.standardStock}
+                              min={0}
+                              onChange={e => updateItem(cat.id, item.id, { standardStock: Number(e.target.value) })}
+                            />
+                          </div>
+                          <button
+                            onClick={() => deleteItem(cat.id, item.id)}
+                            className="text-red-400 text-lg px-1"
+                          >
+                            ×
+                          </button>
                         </div>
-                        <button
-                          onClick={() => deleteItem(cat.id, item.id)}
-                          className="text-red-400 text-lg px-1"
-                        >
-                          ×
-                        </button>
+                        <label className="flex items-center gap-1.5 cursor-pointer w-fit">
+                          <input
+                            type="checkbox"
+                            checked={!!item.isControlled}
+                            onChange={e => updateItem(cat.id, item.id, { isControlled: e.target.checked })}
+                            className="w-4 h-4 accent-red-500"
+                          />
+                          <span className="text-xs text-red-600 font-medium">劇薬</span>
+                        </label>
                       </div>
                     ))}
                   </div>
