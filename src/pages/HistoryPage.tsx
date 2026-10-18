@@ -90,158 +90,171 @@ function formatDate(dateStr: string): string {
   return `${d.getMonth() + 1}/${d.getDate()}（${dow}）`;
 }
 
-function GroupRow({ group, isOpen, onToggle, suppressInlineDeficit }: {
-  group: GroupEntry;
-  isOpen: boolean;
-  onToggle: () => void;
-  suppressInlineDeficit?: boolean;
-}) {
-  const hasDone = group.records.length > 0;
-  const noDeficit = hasDone && !group.hasDeficit;
+// 同品目は最新シフト（夜勤優先）を採用して合算
+function mergeShiftRecords(dayRecs: CheckRecord[], nightRecs: CheckRecord[]): CheckRecord[] {
+  const merged = new Map<string, CheckRecord>();
+  dayRecs.forEach(r => merged.set(`${r.categoryId}:${r.itemId}`, r));
+  nightRecs.forEach(r => merged.set(`${r.categoryId}:${r.itemId}`, r)); // 夜勤で上書き
+  return Array.from(merged.values());
+}
 
-  const icon  = !hasDone ? '⬜' : group.hasDeficit ? '⚠️' : '✅';
-  const color = !hasDone ? 'text-gray-300'
-    : group.hasDeficit ? 'text-orange-500'
-    : 'text-green-600';
-
-  // チェック者名（重複排除）
-  const checkerNames = [...new Set(
-    group.records.map(r => r.checkerName).filter((n): n is string => !!n && n.trim() !== '')
-  )];
-
+function ShiftDetailSection({ label, records }: { label: string; records: CheckRecord[] }) {
   const catMap = new Map<string, { name: string; records: CheckRecord[] }>();
-  group.records.forEach(r => {
+  records.forEach(r => {
     if (!catMap.has(r.categoryId)) catMap.set(r.categoryId, { name: r.categoryName, records: [] });
     catMap.get(r.categoryId)!.records.push(r);
   });
 
   return (
+    <div className="bg-gray-50 rounded-xl p-2">
+      <p className="text-xs font-bold text-gray-500 mb-1">{label}</p>
+      {Array.from(catMap.values()).map(cat => (
+        <div key={cat.name} className="mb-1">
+          <p className="text-xs text-gray-400 mb-0.5">{cat.name}</p>
+          {cat.records.map(r => (
+            <div key={r.recordId} className="flex justify-between text-xs py-0.5">
+              <span className="text-gray-600 mr-2 truncate">{r.itemName}</span>
+              <span className={`shrink-0 ${r.diff < 0 ? 'text-red-500 font-bold' : 'text-gray-400'}`}>
+                {r.inputValue}/{r.standardStock}
+                {r.diff < 0
+                  ? <span className="ml-1">({r.diff})</span>
+                  : <span className="ml-1 text-green-500">✓</span>
+                }
+              </span>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CombinedGroupRow({ label, dayRecords, nightRecords }: {
+  label: string;
+  dayRecords: CheckRecord[];
+  nightRecords: CheckRecord[];
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const allRecords = [...dayRecords, ...nightRecords];
+  const hasAny = allRecords.length > 0;
+
+  // 合算: 同品目は夜勤優先
+  const mergedRecords = mergeShiftRecords(dayRecords, nightRecords);
+  const hasDeficit = mergedRecords.some(r => r.diff < 0);
+  const noDeficit  = hasAny && !hasDeficit;
+
+  const icon  = !hasAny ? '⬜' : hasDeficit ? '⚠️' : '✅';
+  const color = !hasAny ? 'text-gray-300'
+    : hasDeficit ? 'text-orange-500'
+    : 'text-green-600';
+
+  const dayCheckers   = [...new Set(dayRecords.map(r => r.checkerName).filter((n): n is string => !!n && n.trim() !== ''))];
+  const nightCheckers = [...new Set(nightRecords.map(r => r.checkerName).filter((n): n is string => !!n && n.trim() !== ''))];
+
+  // 不足品目インライン（合算後）
+  const deficitItems: { name: string; diff: number }[] = mergedRecords
+    .filter(r => r.diff < 0)
+    .map(r => ({ name: r.itemName, diff: r.diff }));
+
+  return (
     <div className="mb-2 border-b border-gray-50 pb-2 last:border-0">
       <div className="flex items-center justify-between">
         <div>
-          <span className={`text-xs font-bold ${color}`}>{icon} {group.label}</span>
-          {noDeficit && (
-            <span className="ml-2 text-xs text-green-500 font-medium">差分なし</span>
-          )}
+          <span className={`text-xs font-bold ${color}`}>{icon} {label}</span>
+          {noDeficit && <span className="ml-2 text-xs text-green-500 font-medium">差分なし</span>}
         </div>
-        {hasDone && (
-          <button onClick={onToggle} className="text-xs text-gray-400 underline ml-2 shrink-0">
+        {hasAny && (
+          <button onClick={() => setIsOpen(v => !v)} className="text-xs text-gray-400 underline ml-2 shrink-0">
             {isOpen ? '▲ 閉じる' : '▼ 詳細'}
           </button>
         )}
       </div>
 
-      {/* チェック者表示 */}
-      {hasDone && checkerNames.length > 0 && (
-        <p className="text-xs text-gray-400 mt-0.5 pl-4">チェック者: {checkerNames.join(', ')}</p>
+      {/* チェック者（日勤 / 夜勤） */}
+      {hasAny && (dayCheckers.length > 0 || nightCheckers.length > 0) && (
+        <p className="text-xs text-gray-400 mt-0.5 pl-4">
+          {dayCheckers.length > 0 && `日: ${dayCheckers.join(', ')}`}
+          {dayCheckers.length > 0 && nightCheckers.length > 0 && ' / '}
+          {nightCheckers.length > 0 && `夜: ${nightCheckers.join(', ')}`}
+        </p>
       )}
 
-      {/* 不足項目インライン（同名品目を合算） */}
-      {hasDone && !isOpen && group.hasDeficit && !suppressInlineDeficit && (() => {
-        const merged = new Map<string, number>();
-        group.records.filter(r => r.diff < 0).forEach(r => {
-          merged.set(r.itemName, (merged.get(r.itemName) ?? 0) + r.diff);
-        });
-        return (
-          <div className="mt-0.5 pl-2">
-            {Array.from(merged.entries()).map(([name, diff]) => (
-              <p key={name} className="text-xs text-red-500">
-                {name} <span className="font-bold">{diff}</span>
-              </p>
-            ))}
-          </div>
-        );
-      })()}
+      {/* 合算不足インライン */}
+      {hasAny && !isOpen && hasDeficit && (
+        <div className="mt-0.5 pl-2">
+          {deficitItems.map(({ name, diff }) => (
+            <p key={name} className="text-xs text-red-500">
+              {name} <span className="font-bold">{diff}</span>
+            </p>
+          ))}
+        </div>
+      )}
 
-      {/* 詳細展開（同名品目を合算） */}
+      {/* 詳細展開: 日勤・夜勤を個別表示 */}
       {isOpen && (
-        <div className="mt-1 bg-gray-50 rounded-xl p-2 space-y-2">
-          {Array.from(catMap.values()).map(cat => {
-            const itemMap = new Map<string, { standardStock: number; diff: number }>();
-            cat.records.forEach(r => {
-              const prev = itemMap.get(r.itemName);
-              if (prev) {
-                itemMap.set(r.itemName, { standardStock: r.standardStock, diff: prev.diff + r.diff });
-              } else {
-                itemMap.set(r.itemName, { standardStock: r.standardStock, diff: r.diff });
-              }
-            });
-            return (
-              <div key={cat.name}>
-                <p className="text-xs font-bold text-gray-500 mb-0.5">{cat.name}</p>
-                {Array.from(itemMap.entries()).map(([name, { standardStock, diff }]) => (
-                  <div key={name} className="flex justify-between text-xs py-0.5">
-                    <span className="text-gray-600 mr-2 truncate">{name}</span>
-                    <span className={`shrink-0 ${diff < 0 ? 'text-red-500 font-bold' : 'text-gray-400'}`}>
-                      {standardStock + diff}/{standardStock}
-                      {diff < 0
-                        ? <span className="ml-1">({diff})</span>
-                        : <span className="ml-1 text-green-500">差分なし</span>
-                      }
-                    </span>
-                  </div>
-                ))}
-              </div>
-            );
-          })}
+        <div className="mt-1 space-y-2">
+          {dayRecords.length > 0 && (
+            <ShiftDetailSection label="☀️ 日勤" records={dayRecords} />
+          )}
+          {nightRecords.length > 0 && (
+            <ShiftDetailSection label="🌙 夜勤" records={nightRecords} />
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function ShiftSection({ label, data, color, suppressInlineDeficits }: {
-  label: string;
-  data: ShiftData;
-  color: 'blue' | 'indigo';
-  suppressInlineDeficits?: boolean;
+function CombinedOtherRow({ categoryName, dayRecords, nightRecords }: {
+  categoryId: string;
+  categoryName: string;
+  dayRecords: CheckRecord[];
+  nightRecords: CheckRecord[];
 }) {
-  const [openId, setOpenId] = useState<string | null>(null);
-  const toggle = (id: string) => setOpenId(prev => prev === id ? null : id);
-  const labelColor = color === 'blue' ? 'text-blue-600' : 'text-indigo-600';
+  const [isOpen, setIsOpen] = useState(false);
+
+  const mergedRecords = mergeShiftRecords(dayRecords, nightRecords);
+  const hasAny = (dayRecords.length + nightRecords.length) > 0;
+  const hasDeficit = mergedRecords.some(r => r.diff < 0);
+  const noDeficit = hasAny && !hasDeficit;
+
+  const dayCheckers   = [...new Set(dayRecords.map(r => r.checkerName).filter((n): n is string => !!n && n.trim() !== ''))];
+  const nightCheckers = [...new Set(nightRecords.map(r => r.checkerName).filter((n): n is string => !!n && n.trim() !== ''))];
 
   return (
-    <div className="flex-1 min-w-0">
-      <p className={`text-xs font-bold mb-2 ${labelColor}`}>{label}</p>
-      {!data.hasAny ? (
-        <p className="text-xs text-gray-300">記録なし</p>
-      ) : (
-        <>
-          {data.groups.map(g => (
-            <GroupRow key={g.groupId} group={g} isOpen={openId === g.groupId} onToggle={() => toggle(g.groupId)} suppressInlineDeficit={suppressInlineDeficits} />
-          ))}
-          {data.others.map(o => (
-            <div key={o.categoryId} className="mb-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className={`text-xs font-bold ${o.hasDeficit ? 'text-orange-500' : 'text-green-600'}`}>
-                    {o.hasDeficit ? '⚠️' : '✅'} {o.categoryName}
-                  </span>
-                  {!o.hasDeficit && <span className="ml-2 text-xs text-green-500 font-medium">不足なし</span>}
-                </div>
-                <button onClick={() => toggle(o.categoryId)} className="text-xs text-gray-400 underline ml-2">
-                  {openId === o.categoryId ? '▲' : '▼'}
-                </button>
-              </div>
-              {openId === o.categoryId && (
-                <div className="mt-1 bg-gray-50 rounded-xl p-2">
-                  {o.records.map(r => (
-                    <div key={r.recordId} className="flex justify-between text-xs py-0.5">
-                      <span className="text-gray-600 mr-2 truncate">{r.itemName}</span>
-                      <span className={`shrink-0 ${r.diff < 0 ? 'text-red-500 font-bold' : 'text-gray-400'}`}>
-                        {r.inputValue}/{r.standardStock}
-                        {r.diff < 0
-                          ? <span className="ml-1">({r.diff})</span>
-                          : <span className="ml-1 text-green-500">不足なし</span>
-                        }
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </>
+    <div className="mb-2 border-b border-gray-50 pb-2 last:border-0">
+      <div className="flex items-center justify-between">
+        <div>
+          <span className={`text-xs font-bold ${hasDeficit ? 'text-orange-500' : 'text-green-600'}`}>
+            {hasDeficit ? '⚠️' : '✅'} {categoryName}
+          </span>
+          {noDeficit && <span className="ml-2 text-xs text-green-500 font-medium">差分なし</span>}
+        </div>
+        {hasAny && (
+          <button onClick={() => setIsOpen(v => !v)} className="text-xs text-gray-400 underline ml-2 shrink-0">
+            {isOpen ? '▲ 閉じる' : '▼ 詳細'}
+          </button>
+        )}
+      </div>
+
+      {hasAny && (dayCheckers.length > 0 || nightCheckers.length > 0) && (
+        <p className="text-xs text-gray-400 mt-0.5 pl-4">
+          {dayCheckers.length > 0 && `日: ${dayCheckers.join(', ')}`}
+          {dayCheckers.length > 0 && nightCheckers.length > 0 && ' / '}
+          {nightCheckers.length > 0 && `夜: ${nightCheckers.join(', ')}`}
+        </p>
+      )}
+
+      {isOpen && (
+        <div className="mt-1 space-y-2">
+          {dayRecords.length > 0 && (
+            <ShiftDetailSection label="☀️ 日勤" records={dayRecords} />
+          )}
+          {nightRecords.length > 0 && (
+            <ShiftDetailSection label="🌙 夜勤" records={nightRecords} />
+          )}
+        </div>
       )}
     </div>
   );
@@ -256,10 +269,13 @@ export default function HistoryPage({ records, groupId, shift, selectedDate, con
     ? confirmations.some(c => c.groupId === groupId && c.date === selectedDate && c.shift === shift)
     : false;
 
-  // 当日のデータが存在するか
   const hasCurrentDate = groupId
     ? records.some(r => (group?.ids.has(r.categoryId)) && r.date === selectedDate)
     : false;
+
+  const targetGroups = groupId
+    ? HISTORY_GROUPS.filter(g => g.id === groupId)
+    : HISTORY_GROUPS;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -268,7 +284,6 @@ export default function HistoryPage({ records, groupId, shift, selectedDate, con
         <h1 className="text-lg font-bold text-gray-800 flex-1">{title}</h1>
       </div>
 
-      {/* 確認済みボタン（グループ履歴かつ当日データあり） */}
       {groupId && hasCurrentDate && (
         <div className="bg-white border-b border-gray-100 px-4 py-3">
           {isConfirmed ? (
@@ -295,18 +310,57 @@ export default function HistoryPage({ records, groupId, shift, selectedDate, con
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            {grouped.map(day => (
-              <div key={day.date} className="bg-white rounded-2xl shadow-sm p-4">
-                <p className="font-bold text-gray-700 mb-3 border-b border-gray-100 pb-2">
-                  {formatDate(day.date)}
-                </p>
-                <div className="flex gap-4">
-                  <ShiftSection label="☀️ 日勤" data={day.day}   color="blue"   suppressInlineDeficits={day.night.hasAny} />
-                  <div className="w-px bg-gray-100 shrink-0" />
-                  <ShiftSection label="🌙 夜勤" data={day.night} color="indigo" />
+            {grouped.map(day => {
+              // カテゴリグループ合算
+              const groupRows = targetGroups.map(g => {
+                const dayRecs   = day.day.groups.find(dg => dg.groupId === g.id)?.records ?? [];
+                const nightRecs = day.night.groups.find(ng => ng.groupId === g.id)?.records ?? [];
+                if (dayRecs.length === 0 && nightRecs.length === 0) return null;
+                return (
+                  <CombinedGroupRow
+                    key={g.id}
+                    label={g.label}
+                    dayRecords={dayRecs}
+                    nightRecords={nightRecs}
+                  />
+                );
+              });
+
+              // その他カテゴリ合算
+              const othersMap = new Map<string, { name: string; dayR: CheckRecord[]; nightR: CheckRecord[] }>();
+              day.day.others.forEach(o => {
+                othersMap.set(o.categoryId, { name: o.categoryName, dayR: o.records, nightR: [] });
+              });
+              day.night.others.forEach(o => {
+                if (othersMap.has(o.categoryId)) {
+                  othersMap.get(o.categoryId)!.nightR = o.records;
+                } else {
+                  othersMap.set(o.categoryId, { name: o.categoryName, dayR: [], nightR: o.records });
+                }
+              });
+
+              const otherRows = !groupId
+                ? Array.from(othersMap.entries()).map(([catId, { name, dayR, nightR }]) => (
+                    <CombinedOtherRow
+                      key={catId}
+                      categoryId={catId}
+                      categoryName={name}
+                      dayRecords={dayR}
+                      nightRecords={nightR}
+                    />
+                  ))
+                : [];
+
+              return (
+                <div key={day.date} className="bg-white rounded-2xl shadow-sm p-4">
+                  <p className="font-bold text-gray-700 mb-3 border-b border-gray-100 pb-2">
+                    {formatDate(day.date)}
+                  </p>
+                  {groupRows}
+                  {otherRows}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
