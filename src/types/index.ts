@@ -30,6 +30,7 @@ export interface Category {
   frequency: Frequency;
   items: CheckItem[];
   shiftFilter?: Shift[];
+  requiresApproval?: boolean;
 }
 
 export interface RecordItem {

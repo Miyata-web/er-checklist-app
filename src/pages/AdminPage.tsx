@@ -168,7 +168,7 @@ export default function AdminPage({ categories, records, onSave, onBack, gasEnab
           return rec?.checkerName ?? '';
         });
 
-        return { catName: cat.name, colHeaders, itemRows, checkerRow };
+        return { catName: cat.name, requiresApproval: !!cat.requiresApproval, colHeaders, itemRows, checkerRow };
       })
       .filter((s): s is NonNullable<typeof s> => s !== null);
   };
@@ -212,7 +212,11 @@ export default function AdminPage({ categories, records, onSave, onBack, gasEnab
     const toD   = new Date(exportTo   + 'T00:00:00');
     const fmtDate = (d: Date) => `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日(${DOW[d.getDay()]})`;
 
-    const tableHtml = sections.map(({ catName, colHeaders, itemRows, checkerRow }) => {
+    const stampHtmlCell = (name: string) => name
+      ? `<div class="stamp-cell"><div class="stamp-mini"><div class="stamp-mini-label">承認</div><div class="stamp-mini-name">${name}</div></div></div>`
+      : `<div class="stamp-cell"></div>`;
+
+    const tableHtml = sections.map(({ catName, requiresApproval, colHeaders, itemRows, checkerRow }) => {
       const thDate  = colHeaders.map(h => `<th class="date-cell">${h.date}</th>`).join('');
       const thShift = colHeaders.map(h => `<th class="shift-cell">${h.shift}</th>`).join('');
       const itemTrs = itemRows.map(row => {
@@ -223,6 +227,12 @@ export default function AdminPage({ categories, records, onSave, onBack, gasEnab
         return `<tr><td class="item-name">${row.name}</td><td class="controlled">${row.isControlled ? '劇' : ''}</td>${cells}</tr>`;
       }).join('');
       const checkerTds = checkerRow.map(n => `<td class="checker-cell">${n}</td>`).join('');
+      const stampTds = requiresApproval && managerName.trim()
+        ? checkerRow.map(n => n ? `<td class="stamp-td">${stampHtmlCell(managerName.trim())}</td>` : '<td></td>').join('')
+        : '';
+      const stampRow = requiresApproval && managerName.trim()
+        ? `<tr class="stamp-row"><td class="item-name">確認印</td><td></td>${stampTds}</tr>`
+        : '';
       return `
         <div class="category-block">
           <h3>${catName}</h3>
@@ -234,14 +244,11 @@ export default function AdminPage({ categories, records, onSave, onBack, gasEnab
             <tbody>
               ${itemTrs}
               <tr class="checker-row"><td class="item-name">チェック者</td><td></td>${checkerTds}</tr>
+              ${stampRow}
             </tbody>
           </table>
         </div>`;
     }).join('');
-
-    const stampHtml = managerName.trim()
-      ? `<div class="stamp"><div class="stamp-inner"><div class="stamp-label">師長承認</div><div class="stamp-name">${managerName.trim()}</div></div></div>`
-      : '';
 
     const html = `<!DOCTYPE html>
 <html lang="ja">
@@ -267,12 +274,14 @@ export default function AdminPage({ categories, records, onSave, onBack, gasEnab
   .empty { color: #ddd; }
   .checker-row td { background: #f9fafb; font-size: 9px; color: #555; }
   .checker-cell { font-size: 9px; }
+  .stamp-row td { background: #fff8f8; }
+  .stamp-td { padding: 4px 2px; text-align: center; }
+  .stamp-cell { display: flex; justify-content: center; align-items: center; }
+  .stamp-mini { width: 40px; height: 40px; border: 2px solid #dc2626; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .stamp-mini-label { font-size: 6px; color: #dc2626; border-bottom: 1px solid #dc2626; padding-bottom: 1px; margin-bottom: 1px; line-height: 1; }
+  .stamp-mini-name { font-size: 9px; font-weight: bold; color: #dc2626; line-height: 1; }
   .footer { display: flex; justify-content: flex-end; align-items: center; margin-top: 16px; gap: 16px; }
   .footer-label { font-size: 10px; color: #555; }
-  .stamp { width: 64px; height: 64px; border: 3px solid #dc2626; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
-  .stamp-inner { text-align: center; color: #dc2626; line-height: 1.3; }
-  .stamp-label { font-size: 8px; border-bottom: 1px solid #dc2626; padding-bottom: 2px; margin-bottom: 2px; }
-  .stamp-name { font-size: 12px; font-weight: bold; }
   @media print { .print-btn { display: none; } }
 </style>
 </head>
@@ -281,10 +290,7 @@ export default function AdminPage({ categories, records, onSave, onBack, gasEnab
 <p class="period">${fmtDate(fromD)} 〜 ${fmtDate(toD)}</p>
 <button class="print-btn" onclick="window.print()">🖨️ 印刷する</button>
 ${tableHtml}
-<div class="footer">
-  <div class="footer-label">管理者確認</div>
-  ${stampHtml}
-</div>
+
 </body>
 </html>`;
 
@@ -418,7 +424,7 @@ ${tableHtml}
                     onChange={e => updateCategory(cat.id, { name: e.target.value })}
                     onClick={e => e.stopPropagation()}
                   />
-                  <div className="mt-1">
+                  <div className="mt-1 flex items-center gap-2 flex-wrap">
                     <select
                       className="text-xs text-gray-500 bg-gray-100 rounded-full px-2 py-0.5 border-none focus:outline-none"
                       value={cat.frequency}
@@ -429,6 +435,18 @@ ${tableHtml}
                         <option key={val} value={val}>{label}</option>
                       ))}
                     </select>
+                    <label
+                      className="flex items-center gap-1 cursor-pointer"
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={!!cat.requiresApproval}
+                        onChange={e => updateCategory(cat.id, { requiresApproval: e.target.checked })}
+                        className="w-3.5 h-3.5 accent-red-500"
+                      />
+                      <span className="text-xs text-red-600 font-medium">要確認印</span>
+                    </label>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
