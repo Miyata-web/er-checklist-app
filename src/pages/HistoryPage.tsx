@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import type { CheckRecord, GroupConfirmation, Shift } from '../types';
+import type { Category, CheckRecord, GroupConfirmation, Shift } from '../types';
 import { HISTORY_GROUPS, GROUPED_IDS } from '../store/historyGroups';
 
 interface Props {
   records: CheckRecord[];
+  categories: Category[];
   groupId?: string;
   shift: Shift;
   selectedDate: string;
@@ -260,17 +261,26 @@ function CombinedOtherRow({ categoryName, dayRecords, nightRecords }: {
   );
 }
 
-export default function HistoryPage({ records, groupId, shift, selectedDate, confirmations, onConfirm, onBack }: Props) {
+export default function HistoryPage({ records, categories, groupId, shift, selectedDate, confirmations, onConfirm, onBack }: Props) {
+  // itemId -> 現在の品目名 マップ（管理画面でのリネームに対応）
+  const itemNameMap = new Map<string, string>();
+  categories.forEach(cat => cat.items.forEach(item => itemNameMap.set(item.id, item.name)));
+
+  // レコードの品目名を現在の名前で補正
+  const resolvedRecords = records.map(r => {
+    const currentName = itemNameMap.get(r.itemId);
+    return currentName && currentName !== r.itemName ? { ...r, itemName: currentName } : r;
+  });
   const group   = groupId ? HISTORY_GROUPS.find(g => g.id === groupId) : undefined;
   const title   = group ? `${group.label} 履歴` : 'チェック履歴';
-  const grouped = groupRecords(records, groupId);
+  const grouped = groupRecords(resolvedRecords, groupId);
 
   const isConfirmed = groupId
     ? confirmations.some(c => c.groupId === groupId && c.date === selectedDate && c.shift === shift)
     : false;
 
   const hasCurrentDate = groupId
-    ? records.some(r => (group?.ids.has(r.categoryId)) && r.date === selectedDate)
+    ? resolvedRecords.some(r => (group?.ids.has(r.categoryId)) && r.date === selectedDate)
     : false;
 
   const targetGroups = groupId

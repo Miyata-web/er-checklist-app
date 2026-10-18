@@ -211,6 +211,7 @@ export default function App() {
     return (
       <HistoryPage
         records={records}
+        categories={categories}
         groupId={page.groupId}
         shift={page.shift}
         selectedDate={page.selectedDate}
