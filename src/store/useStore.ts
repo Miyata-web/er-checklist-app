@@ -1,76 +1,122 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Category, CheckDraft, CheckRecord, GroupConfirmation, Shift } from '../types';
 import { DEFAULT_CATEGORIES } from './defaultData';
 
-const STORAGE_CATEGORIES = 'er-checklist-categories';
-const STORAGE_RECORDS    = 'er-checklist-records';
-const STORAGE_DRAFTS         = 'er-checklist-drafts';
-const STORAGE_CONFIRMATIONS  = 'er-checklist-confirmations';
-const STORAGE_VERSION    = 'er-checklist-data-version';
-const RETENTION_DAYS     = 60;
+const STORAGE_CATEGORIES    = 'er-checklist-categories';
+const STORAGE_RECORDS       = 'er-checklist-records';
+const STORAGE_DRAFTS        = 'er-checklist-drafts';
+const STORAGE_CONFIRMATIONS = 'er-checklist-confirmations';
+const STORAGE_VERSION       = 'er-checklist-data-version';
+const RETENTION_DAYS        = 60;
+const DATA_VERSION          = '5';
 
-// defaultData.ts のカテゴリ名・構成を変更した際にここを更新する
-const DATA_VERSION = '5';
-
-function loadCategories(): Category[] {
+// ---- ローカルストレージ helpers ----
+function lsGet<T>(key: string, fallback: T): T {
   try {
-    // バージョンが変わった場合はデフォルトデータにリセット
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch { return fallback; }
+}
+function lsSet(key: string, value: unknown) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* ignore */ }
+}
+
+// ---- API helpers ----
+const API = '/api';
+async function apiFetch<T>(path: string): Promise<T | null> {
+  try {
+    const res = await fetch(`${API}/${path}`);
+    if (!res.ok) return null;
+    return await res.json() as T;
+  } catch { return null; }
+}
+async function apiPost(path: string, data: unknown): Promise<void> {
+  try {
+    await fetch(`${API}/${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+  } catch { /* ignore — local is already saved */ }
+}
+
+// ---- カテゴリ ----
+function loadLocalCategories(): Category[] {
+  try {
     if (localStorage.getItem(STORAGE_VERSION) !== DATA_VERSION) {
       localStorage.setItem(STORAGE_VERSION, DATA_VERSION);
       localStorage.removeItem(STORAGE_CATEGORIES);
       return DEFAULT_CATEGORIES;
     }
     const raw = localStorage.getItem(STORAGE_CATEGORIES);
-    if (raw) return JSON.parse(raw) as Category[];
-  } catch { /* ignore */ }
-  return DEFAULT_CATEGORIES;
-}
-
-function loadRecords(): CheckRecord[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_RECORDS);
-    if (raw) {
-      const all: CheckRecord[] = JSON.parse(raw);
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - RETENTION_DAYS);
-      const cutoffStr = cutoff.toISOString().slice(0, 10);
-      return all.filter(r => r.date >= cutoffStr);
-    }
-  } catch { /* ignore */ }
-  return [];
-}
-
-function loadDrafts(): CheckDraft[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_DRAFTS);
-    if (raw) return JSON.parse(raw) as CheckDraft[];
-  } catch { /* ignore */ }
-  return [];
+    return raw ? JSON.parse(raw) as Category[] : DEFAULT_CATEGORIES;
+  } catch { return DEFAULT_CATEGORIES; }
 }
 
 export function useCategories() {
-  const [categories, setCategories] = useState<Category[]>(loadCategories);
+  const [categories, setCategories] = useState<Category[]>(loadLocalCategories);
+
+  // 起動時にサーバーから取得
+  useEffect(() => {
+    apiFetch<Category[]>('categories').then(remote => {
+      if (remote && remote.length > 0) {
+        setCategories(remote);
+        lsSet(STORAGE_CATEGORIES, remote);
+      }
+    });
+  }, []);
 
   const saveCategories = useCallback((cats: Category[]) => {
     setCategories(cats);
-    localStorage.setItem(STORAGE_CATEGORIES, JSON.stringify(cats));
+    lsSet(STORAGE_CATEGORIES, cats);
+    apiPost('categories', cats);
   }, []);
 
   return { categories, saveCategories };
 }
 
-export function useRecords() {
-  const [records, setRecords] = useState<CheckRecord[]>(loadRecords);
+// ---- レコード ----
+function pruneRecords(all: CheckRecord[]): CheckRecord[] {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - RETENTION_DAYS);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  return all.filter(r => r.date >= cutoffStr);
+}
 
+export function useRecords() {
+  const [records, setRecords] = useState<CheckRecord[]>(() =>
+    pruneRecords(lsGet<CheckRecord[]>(STORAGE_RECORDS, []))
+  );
+  const pendingSync = useRef(false);
+
+  // 起動時にサーバーから取得
   useEffect(() => {
-    localStorage.setItem(STORAGE_RECORDS, JSON.stringify(records));
+    apiFetch<CheckRecord[]>('records').then(remote => {
+      if (remote) {
+        const pruned = pruneRecords(remote);
+        setRecords(pruned);
+        lsSet(STORAGE_RECORDS, pruned);
+      }
+    });
+  }, []);
+
+  // ローカル変更をサーバーに書き戻し（デバウンス）
+  useEffect(() => {
+    if (pendingSync.current) return;
+    pendingSync.current = true;
+    const t = setTimeout(() => {
+      lsSet(STORAGE_RECORDS, records);
+      apiPost('records', records);
+      pendingSync.current = false;
+    }, 1000);
+    return () => { clearTimeout(t); pendingSync.current = false; };
   }, [records]);
 
   const addRecords = useCallback((newRecords: CheckRecord[]) => {
     setRecords(prev => {
       const filtered = prev.filter(r =>
-        !newRecords.some(
-          nr => nr.date === r.date && nr.shift === r.shift && nr.categoryId === r.categoryId
+        !newRecords.some(nr =>
+          nr.date === r.date && nr.shift === r.shift && nr.categoryId === r.categoryId
         )
       );
       return [...filtered, ...newRecords];
@@ -80,12 +126,13 @@ export function useRecords() {
   return { records, addRecords };
 }
 
+// ---- ドラフト（端末ローカルのみ） ----
 export function useDrafts() {
-  const [drafts, setDrafts] = useState<CheckDraft[]>(loadDrafts);
+  const [drafts, setDrafts] = useState<CheckDraft[]>(() =>
+    lsGet<CheckDraft[]>(STORAGE_DRAFTS, [])
+  );
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_DRAFTS, JSON.stringify(drafts));
-  }, [drafts]);
+  useEffect(() => { lsSet(STORAGE_DRAFTS, drafts); }, [drafts]);
 
   const saveDraft = useCallback((draft: CheckDraft) => {
     setDrafts(prev => {
@@ -105,19 +152,24 @@ export function useDrafts() {
   return { drafts, saveDraft, clearDraft };
 }
 
-function loadConfirmations(): GroupConfirmation[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_CONFIRMATIONS);
-    if (raw) return JSON.parse(raw) as GroupConfirmation[];
-  } catch { /* ignore */ }
-  return [];
-}
-
+// ---- 確認済み ----
 export function useConfirmations() {
-  const [confirmations, setConfirmations] = useState<GroupConfirmation[]>(loadConfirmations);
+  const [confirmations, setConfirmations] = useState<GroupConfirmation[]>(() =>
+    lsGet<GroupConfirmation[]>(STORAGE_CONFIRMATIONS, [])
+  );
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_CONFIRMATIONS, JSON.stringify(confirmations));
+    apiFetch<GroupConfirmation[]>('confirmations').then(remote => {
+      if (remote && remote.length > 0) {
+        setConfirmations(remote);
+        lsSet(STORAGE_CONFIRMATIONS, remote);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    lsSet(STORAGE_CONFIRMATIONS, confirmations);
+    apiPost('confirmations', confirmations);
   }, [confirmations]);
 
   const addConfirmation = useCallback((groupId: string, date: string, shift: Shift) => {
@@ -132,6 +184,7 @@ export function useConfirmations() {
   return { confirmations, addConfirmation };
 }
 
+// ---- ユーティリティ ----
 export function getTodayString(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -142,31 +195,19 @@ export function getMonthString(): string {
 }
 
 export function isCategoryDone(
-  records: CheckRecord[],
-  categoryId: string,
-  shift: Shift,
-  date: string
+  records: CheckRecord[], categoryId: string, shift: Shift, date: string
 ): boolean {
-  return records.some(
-    r => r.categoryId === categoryId && r.shift === shift && r.date === date
-  );
+  return records.some(r => r.categoryId === categoryId && r.shift === shift && r.date === date);
 }
 
 export function isCategoryDraft(
-  drafts: CheckDraft[],
-  categoryId: string,
-  shift: Shift,
-  date: string
+  drafts: CheckDraft[], categoryId: string, shift: Shift, date: string
 ): boolean {
-  return drafts.some(
-    d => d.categoryId === categoryId && d.shift === shift && d.date === date
-  );
+  return drafts.some(d => d.categoryId === categoryId && d.shift === shift && d.date === date);
 }
 
 export function getMonthlyCheckCount(
-  records: CheckRecord[],
-  categoryId: string,
-  monthStr: string
+  records: CheckRecord[], categoryId: string, monthStr: string
 ): number {
   const dates = new Set(
     records

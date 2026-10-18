@@ -7,9 +7,9 @@ async function get<T>(action: string, params: Record<string, string> = {}): Prom
   url.searchParams.set('action', action);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   const res = await fetch(url.toString());
-  const data = await res.json();
+  const data = await res.json() as { error?: string };
   if (data.error) throw new Error(data.error);
-  return data as T;
+  return data as unknown as T;
 }
 
 async function post<T>(body: unknown): Promise<T> {
@@ -18,9 +18,9 @@ async function post<T>(body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  const data = await res.json();
+  const data = await res.json() as { error?: string };
   if (data.error) throw new Error(data.error);
-  return data as T;
+  return data as unknown as T;
 }
 
 export const gasClient = {
