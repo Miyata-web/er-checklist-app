@@ -99,6 +99,23 @@ function mergeShiftRecords(dayRecs: CheckRecord[], nightRecs: CheckRecord[]): Ch
   return Array.from(merged.values());
 }
 
+// 表記ゆれ（全角/半角・空白）を吸収した薬剤名キー
+function nameKey(name: string): string {
+  return name.normalize('NFKC').replace(/\s+/g, '').toLowerCase();
+}
+
+// カテゴリをまたいで同名薬剤の不足数を合算
+function sumDeficitsByName(records: CheckRecord[]): { name: string; diff: number }[] {
+  const map = new Map<string, { name: string; diff: number }>();
+  records.filter(r => r.diff < 0).forEach(r => {
+    const key = nameKey(r.itemName);
+    const prev = map.get(key);
+    if (prev) prev.diff += r.diff;
+    else map.set(key, { name: r.itemName, diff: r.diff });
+  });
+  return Array.from(map.values());
+}
+
 function ShiftDetailSection({ label, records }: { label: string; records: CheckRecord[] }) {
   const catMap = new Map<string, { name: string; records: CheckRecord[] }>();
   records.forEach(r => {
@@ -154,9 +171,7 @@ function CombinedGroupRow({ label, dayRecords, nightRecords }: {
   const nightCheckers = [...new Set(nightRecords.map(r => r.checkerName).filter((n): n is string => !!n && n.trim() !== ''))];
 
   // 不足品目インライン（合算後）
-  const deficitItems: { name: string; diff: number }[] = mergedRecords
-    .filter(r => r.diff < 0)
-    .map(r => ({ name: r.itemName, diff: r.diff }));
+  const deficitItems = sumDeficitsByName(mergedRecords);
 
   return (
     <div className="mb-2 border-b border-gray-50 pb-2 last:border-0">
