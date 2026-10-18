@@ -56,15 +56,21 @@ function loadLocalCategories(): Category[] {
 export function useCategories() {
   const [categories, setCategories] = useState<Category[]>(loadLocalCategories);
 
-  // 起動時にサーバーから取得
-  useEffect(() => {
-    apiFetch<Category[]>('categories').then(remote => {
-      if (remote && remote.length > 0) {
-        setCategories(remote);
-        lsSet(STORAGE_CATEGORIES, remote);
-      }
-    });
+  const apply = useCallback((remote: Category[] | null): boolean => {
+    if (remote === null) return false;
+    if (remote.length > 0) {
+      setCategories(remote);
+      lsSet(STORAGE_CATEGORIES, remote);
+    }
+    return true;
   }, []);
+
+  const refresh = useCallback(
+    () => apiFetch<Category[]>('categories').then(apply), [apply]);
+
+  useEffect(() => {
+    apiFetch<Category[]>('categories').then(apply);
+  }, [apply]);
 
   const saveCategories = useCallback((cats: Category[]) => {
     setCategories(cats);
@@ -72,7 +78,7 @@ export function useCategories() {
     apiPost('categories', cats);
   }, []);
 
-  return { categories, saveCategories };
+  return { categories, saveCategories, refresh };
 }
 
 // ---- レコード ----
@@ -89,16 +95,20 @@ export function useRecords() {
   );
   const pendingSync = useRef(false);
 
-  // 起動時にサーバーから取得
-  useEffect(() => {
-    apiFetch<CheckRecord[]>('records').then(remote => {
-      if (remote) {
-        const pruned = pruneRecords(remote);
-        setRecords(pruned);
-        lsSet(STORAGE_RECORDS, pruned);
-      }
-    });
+  const apply = useCallback((remote: CheckRecord[] | null): boolean => {
+    if (remote === null) return false;
+    const pruned = pruneRecords(remote);
+    setRecords(pruned);
+    lsSet(STORAGE_RECORDS, pruned);
+    return true;
   }, []);
+
+  const refresh = useCallback(
+    () => apiFetch<CheckRecord[]>('records').then(apply), [apply]);
+
+  useEffect(() => {
+    apiFetch<CheckRecord[]>('records').then(apply);
+  }, [apply]);
 
   // ローカル変更をサーバーに書き戻し（デバウンス）
   useEffect(() => {
@@ -123,7 +133,7 @@ export function useRecords() {
     });
   }, []);
 
-  return { records, addRecords };
+  return { records, addRecords, refresh };
 }
 
 // ---- ドラフト（端末ローカルのみ） ----
@@ -158,14 +168,21 @@ export function useConfirmations() {
     lsGet<GroupConfirmation[]>(STORAGE_CONFIRMATIONS, [])
   );
 
-  useEffect(() => {
-    apiFetch<GroupConfirmation[]>('confirmations').then(remote => {
-      if (remote && remote.length > 0) {
-        setConfirmations(remote);
-        lsSet(STORAGE_CONFIRMATIONS, remote);
-      }
-    });
+  const apply = useCallback((remote: GroupConfirmation[] | null): boolean => {
+    if (remote === null) return false;
+    if (remote.length > 0) {
+      setConfirmations(remote);
+      lsSet(STORAGE_CONFIRMATIONS, remote);
+    }
+    return true;
   }, []);
+
+  const refresh = useCallback(
+    () => apiFetch<GroupConfirmation[]>('confirmations').then(apply), [apply]);
+
+  useEffect(() => {
+    apiFetch<GroupConfirmation[]>('confirmations').then(apply);
+  }, [apply]);
 
   useEffect(() => {
     lsSet(STORAGE_CONFIRMATIONS, confirmations);
@@ -181,7 +198,7 @@ export function useConfirmations() {
     });
   }, []);
 
-  return { confirmations, addConfirmation };
+  return { confirmations, addConfirmation, refresh };
 }
 
 // ---- ユーティリティ ----

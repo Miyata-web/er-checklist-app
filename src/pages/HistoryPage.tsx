@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Category, CheckRecord, GroupConfirmation, Shift } from '../types';
 import { HISTORY_GROUPS, GROUPED_IDS } from '../store/historyGroups';
+import RefreshButton from '../components/RefreshButton';
 
 interface Props {
   records: CheckRecord[];
@@ -11,6 +12,7 @@ interface Props {
   confirmations: GroupConfirmation[];
   onConfirm: (groupId: string, date: string, shift: Shift) => void;
   onBack: () => void;
+  onRefresh: () => Promise<boolean>;
 }
 
 interface GroupEntry {
@@ -276,7 +278,7 @@ function CombinedOtherRow({ categoryName, dayRecords, nightRecords }: {
   );
 }
 
-export default function HistoryPage({ records, categories, groupId, shift, selectedDate, confirmations, onConfirm, onBack }: Props) {
+export default function HistoryPage({ records, categories, groupId, shift, selectedDate, confirmations, onConfirm, onBack, onRefresh }: Props) {
   // itemId -> 現在の品目名 マップ（管理画面でのリネームに対応）
   const itemNameMap = new Map<string, string>();
   categories.forEach(cat => cat.items.forEach(item => itemNameMap.set(item.id, item.name)));
@@ -307,6 +309,7 @@ export default function HistoryPage({ records, categories, groupId, shift, selec
       <div className="bg-white border-b border-gray-200 px-4 py-4 flex items-center gap-3">
         <button onClick={onBack} className="text-gray-600 text-xl px-1">←</button>
         <h1 className="text-lg font-bold text-gray-800 flex-1">{title}</h1>
+        <RefreshButton onRefresh={onRefresh} />
       </div>
 
       {groupId && hasCurrentDate && (

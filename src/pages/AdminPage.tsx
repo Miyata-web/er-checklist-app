@@ -168,7 +168,12 @@ export default function AdminPage({ categories, records, onSave, onBack, gasEnab
           return rec?.checkerName ?? '';
         });
 
-        return { catName: cat.name, requiresApproval: !!cat.requiresApproval, colHeaders, itemRows, checkerRow };
+        const checkedCols = cols.map(col => {
+          const [date, shift] = col.split('|') as [string, string];
+          return catRecords.some(r => r.date === date && r.shift === shift);
+        });
+
+        return { catName: cat.name, requiresApproval: !!cat.requiresApproval, colHeaders, itemRows, checkerRow, checkedCols };
       })
       .filter((s): s is NonNullable<typeof s> => s !== null);
   };
@@ -216,7 +221,7 @@ export default function AdminPage({ categories, records, onSave, onBack, gasEnab
       ? `<div class="stamp-cell"><div class="stamp-mini"><div class="stamp-mini-label">承認</div><div class="stamp-mini-name">${name}</div></div></div>`
       : `<div class="stamp-cell"></div>`;
 
-    const tableHtml = sections.map(({ catName, requiresApproval, colHeaders, itemRows, checkerRow }) => {
+    const tableHtml = sections.map(({ catName, requiresApproval, colHeaders, itemRows, checkerRow, checkedCols }) => {
       const thDate  = colHeaders.map(h => `<th class="date-cell">${h.date}</th>`).join('');
       const thShift = colHeaders.map(h => `<th class="shift-cell">${h.shift}</th>`).join('');
       const itemTrs = itemRows.map(row => {
@@ -228,7 +233,7 @@ export default function AdminPage({ categories, records, onSave, onBack, gasEnab
       }).join('');
       const checkerTds = checkerRow.map(n => `<td class="checker-cell">${n}</td>`).join('');
       const stampTds = requiresApproval && managerName.trim()
-        ? checkerRow.map(n => n ? `<td class="stamp-td">${stampHtmlCell(managerName.trim())}</td>` : '<td></td>').join('')
+        ? checkedCols.map(checked => checked ? `<td class="stamp-td">${stampHtmlCell(managerName.trim())}</td>` : '<td></td>').join('')
         : '';
       const stampRow = requiresApproval && managerName.trim()
         ? `<tr class="stamp-row"><td class="item-name">確認印</td><td></td>${stampTds}</tr>`

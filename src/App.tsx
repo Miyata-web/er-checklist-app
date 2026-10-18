@@ -27,10 +27,15 @@ const GAS_ENABLED = Boolean(import.meta.env.VITE_GAS_URL && !import.meta.env.VIT
 
 export default function App() {
   const [page, setPage] = useState<Page>({ name: 'home' });
-  const { categories, saveCategories }    = useCategories();
-  const { records, addRecords }           = useRecords();
-  const { drafts, saveDraft, clearDraft } = useDrafts();
-  const { confirmations, addConfirmation } = useConfirmations();
+  const { categories, saveCategories, refresh: refreshCategories }       = useCategories();
+  const { records, addRecords, refresh: refreshRecords }                  = useRecords();
+  const { drafts, saveDraft, clearDraft }                                 = useDrafts();
+  const { confirmations, addConfirmation, refresh: refreshConfirmations } = useConfirmations();
+
+  const refreshAll = async () => {
+    const results = await Promise.all([refreshCategories(), refreshRecords(), refreshConfirmations()]);
+    return results.every(Boolean);
+  };
 
   const handleCategorySelect = (shift: Shift, selectedDate: string, category: Category, checkerName: string) => {
     const initialDeficits: Record<string, number> = {};
@@ -99,6 +104,7 @@ export default function App() {
       <HomePage
         onSelectDaily={() => setPage({ name: 'shift' })}
         onSelectMonthly={() => setPage({ name: 'name-monthly' })}
+        onRefresh={refreshAll}
       />
     );
   }
@@ -155,6 +161,7 @@ export default function App() {
         onBack={() => setPage({ name: 'date', shift: page.shift, checkerName: page.checkerName })}
         onGoHistory={groupId => setPage({ name: 'history', groupId, shift: page.shift, selectedDate: page.selectedDate })}
         onGoAdmin={() => setPage({ name: 'admin' })}
+        onRefresh={refreshAll}
       />
     );
   }
@@ -174,6 +181,7 @@ export default function App() {
         onBack={() => setPage({ name: 'name-monthly' })}
         onGoHistory={() => {}}
         onGoAdmin={() => setPage({ name: 'admin' })}
+        onRefresh={refreshAll}
       />
     );
   }
@@ -217,6 +225,7 @@ export default function App() {
         selectedDate={page.selectedDate}
         confirmations={confirmations}
         onConfirm={addConfirmation}
+        onRefresh={refreshAll}
         onBack={() => setPage({ name: 'category', shift: page.shift, selectedDate: page.selectedDate, checkerName: '' })}
       />
     );
