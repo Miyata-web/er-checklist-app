@@ -34,9 +34,7 @@ export default function AdminPage({ categories, records, onSave, onBack, gasEnab
   const [exportFrom, setExportFrom] = useState(firstOfMonth);
   const [exportTo,   setExportTo]   = useState(todayStr);
   const [managerName, setManagerName] = useState('');
-  const [selectedCatIds, setSelectedCatIds] = useState<Set<string>>(
-    () => new Set(categories.map(c => c.id))
-  );
+  const [selectedCatIds, setSelectedCatIds] = useState<Set<string>>(() => new Set());
   const toggleCat = (id: string) =>
     setSelectedCatIds(prev => {
       const next = new Set(prev);
@@ -396,17 +394,20 @@ ${tableHtml}
             品目×日付のピボット形式。定数通りはレ点、不足はマイナス表記。
           </p>
 
+          {selectedCatIds.size === 0 && (
+            <p className="text-xs text-orange-500 mb-2">出力するカテゴリを選択してください</p>
+          )}
           <div className="flex gap-2">
             <button
               onClick={exportPivotCsv}
-              disabled={records.length === 0}
+              disabled={records.length === 0 || selectedCatIds.size === 0}
               className="flex-1 py-3 rounded-xl bg-green-500 text-white text-sm font-bold active:bg-green-600 transition-colors disabled:opacity-40"
             >
               📥 CSV
             </button>
             <button
               onClick={printPreview}
-              disabled={records.length === 0}
+              disabled={records.length === 0 || selectedCatIds.size === 0}
               className="flex-1 py-3 rounded-xl bg-blue-500 text-white text-sm font-bold active:bg-blue-600 transition-colors disabled:opacity-40"
             >
               🖨️ 印刷プレビュー
