@@ -1,4 +1,13 @@
 import { useState } from 'react';
+import {
+  DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor,
+  useSensor, useSensors, type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
+import { CSS } from '@dnd-kit/utilities';
 import type { Category, CheckItem, CheckRecord, Frequency } from '../types';
 
 interface Props {
@@ -18,6 +27,63 @@ const FREQUENCY_LABELS: Record<Frequency, string> = {
 
 function generateId(): string {
   return `id_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function SortableItemRow({ item, onChange, onDelete }: {
+  item: CheckItem;
+  onChange: (changes: Partial<CheckItem>) => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
+    useSortable({ id: item.id });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={`flex gap-2 bg-gray-50 rounded-xl p-3 ${isDragging ? 'relative z-10 shadow-lg ring-2 ring-blue-300 bg-white' : ''}`}
+    >
+      <button
+        ref={setActivatorNodeRef}
+        {...attributes}
+        {...listeners}
+        aria-label={`${item.name} を並べ替え`}
+        className="touch-none cursor-grab active:cursor-grabbing text-gray-400 text-lg px-1 -ml-1 self-center"
+      >
+        ⠿
+      </button>
+      <div className="flex-1 min-w-0 flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <input
+            className="flex-1 min-w-0 bg-transparent text-sm text-gray-700 focus:outline-none"
+            value={item.name}
+            onChange={e => onChange({ name: e.target.value })}
+            placeholder="項目名"
+          />
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-gray-400">基準:</span>
+            <input
+              type="number"
+              className="w-14 text-center text-sm font-bold text-gray-700 bg-white rounded-lg border border-gray-200 py-1 focus:outline-none focus:border-blue-300"
+              value={item.standardStock}
+              min={0}
+              onChange={e => onChange({ standardStock: Number(e.target.value) })}
+            />
+          </div>
+          <button onClick={onDelete} className="text-red-400 text-lg px-1">×</button>
+        </div>
+        <label className="flex items-center gap-1.5 cursor-pointer w-fit">
+          <input
+            type="checkbox"
+            checked={!!item.isControlled}
+            onChange={e => onChange({ isControlled: e.target.checked })}
+            className="w-4 h-4 accent-red-500"
+          />
+          <span className="text-xs text-red-600 font-medium">劇薬</span>
+        </label>
+      </div>
+    </div>
+  );
 }
 
 export default function AdminPage({ categories, records, onSave, onBack, gasEnabled }: Props) {
@@ -104,6 +170,24 @@ export default function AdminPage({ categories, records, onSave, onBack, gasEnab
           ? { ...c, items: c.items.map(i => i.id === itemId ? { ...i, ...changes } : i) }
           : c
       )
+    );
+  };
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleItemDragEnd = (catId: string, { active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return;
+    setCats(prev =>
+      prev.map(c => {
+        if (c.id !== catId) return c;
+        const from = c.items.findIndex(i => i.id === active.id);
+        const to   = c.items.findIndex(i => i.id === over.id);
+        return { ...c, items: arrayMove(c.items, from, to) };
+      })
     );
   };
 
@@ -470,43 +554,23 @@ ${tableHtml}
               {expandedId === cat.id && (
                 <div className="border-t border-gray-100 p-4">
                   <div className="flex flex-col gap-2 mb-3">
-                    {cat.items.map(item => (
-                      <div key={item.id} className="flex flex-col gap-1 bg-gray-50 rounded-xl p-3">
-                        <div className="flex items-center gap-2">
-                          <input
-                            className="flex-1 bg-transparent text-sm text-gray-700 focus:outline-none"
-                            value={item.name}
-                            onChange={e => updateItem(cat.id, item.id, { name: e.target.value })}
-                            placeholder="項目名"
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      modifiers={[restrictToVerticalAxis]}
+                      onDragEnd={e => handleItemDragEnd(cat.id, e)}
+                    >
+                      <SortableContext items={cat.items.map(i => i.id)} strategy={verticalListSortingStrategy}>
+                        {cat.items.map(item => (
+                          <SortableItemRow
+                            key={item.id}
+                            item={item}
+                            onChange={changes => updateItem(cat.id, item.id, changes)}
+                            onDelete={() => deleteItem(cat.id, item.id)}
                           />
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs text-gray-400">基準:</span>
-                            <input
-                              type="number"
-                              className="w-14 text-center text-sm font-bold text-gray-700 bg-white rounded-lg border border-gray-200 py-1 focus:outline-none focus:border-blue-300"
-                              value={item.standardStock}
-                              min={0}
-                              onChange={e => updateItem(cat.id, item.id, { standardStock: Number(e.target.value) })}
-                            />
-                          </div>
-                          <button
-                            onClick={() => deleteItem(cat.id, item.id)}
-                            className="text-red-400 text-lg px-1"
-                          >
-                            ×
-                          </button>
-                        </div>
-                        <label className="flex items-center gap-1.5 cursor-pointer w-fit">
-                          <input
-                            type="checkbox"
-                            checked={!!item.isControlled}
-                            onChange={e => updateItem(cat.id, item.id, { isControlled: e.target.checked })}
-                            className="w-4 h-4 accent-red-500"
-                          />
-                          <span className="text-xs text-red-600 font-medium">劇薬</span>
-                        </label>
-                      </div>
-                    ))}
+                        ))}
+                      </SortableContext>
+                    </DndContext>
                   </div>
                   <button
                     onClick={() => addItem(cat.id)}
