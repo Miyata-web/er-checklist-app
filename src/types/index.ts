@@ -21,6 +21,7 @@ export interface CheckItem {
   id: string;
   name: string;
   standardStock: number;
+  inputType?: 'select';
 }
 
 export interface Category {

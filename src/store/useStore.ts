@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Category, CheckDraft, CheckRecord, GroupConfirmation, Shift } from '../types';
 import { DEFAULT_CATEGORIES } from './defaultData';
+import { businessDateString } from '../utils/today';
 
 const STORAGE_CATEGORIES = 'er-checklist-categories';
 const STORAGE_RECORDS    = 'er-checklist-records';
@@ -133,7 +134,8 @@ export function useConfirmations() {
 }
 
 export function getTodayString(): string {
-  return new Date().toISOString().slice(0, 10);
+  // 業務日（8:20境界・ローカルタイム基準）。ER スケジュール側のヘッダー日付と一致させる。
+  return businessDateString();
 }
 
 export function getMonthString(): string {
