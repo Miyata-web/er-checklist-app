@@ -6,6 +6,7 @@ interface ItemState {
   name: string;
   standardStock: number;
   deficit: number;
+  inputType?: 'select';
 }
 
 interface Props {
@@ -25,6 +26,7 @@ export default function CheckPage({ shift, selectedDate, category, initialDefici
       name         : item.name,
       standardStock: item.standardStock,
       deficit      : initialDeficits[item.id] ?? 0,
+      inputType    : item.inputType,
     }))
   );
   const [submitted, setSubmitted] = useState(false);
@@ -117,48 +119,85 @@ export default function CheckPage({ shift, selectedDate, category, initialDefici
       {/* 項目リスト */}
       <div className="flex-1 p-4 overflow-y-auto">
         <div className="flex flex-col gap-3">
-          {items.map((item, index) => (
-            <div
-              key={item.id}
-              onClick={() => addDeficit(index)}
-              className={`bg-white rounded-2xl shadow-sm p-4 cursor-pointer select-none active:scale-98 transition-transform ${
-                item.deficit > 0 ? 'border-2 border-red-300' : 'border-2 border-transparent'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex-1 min-w-0 mr-3">
-                  <p className="font-bold text-gray-800 text-base leading-snug">{item.name}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">定数: {item.standardStock}</p>
-                </div>
+          {items.map((item, index) => {
+            const isSelect = item.inputType === 'select';
+            const selectValue = item.standardStock - item.deficit; // 現在の残量値
+            const isLow = isSelect && selectValue <= 5;
 
-                <div
-                  className="flex items-center gap-3"
-                  onClick={e => e.stopPropagation()}
-                >
-                  <button
-                    onClick={() => reduceDeficit(index)}
-                    disabled={item.deficit === 0}
-                    className="w-10 h-10 rounded-full bg-gray-100 text-gray-600 text-xl font-bold flex items-center justify-center active:bg-gray-200 disabled:opacity-30 transition-colors"
+            return (
+              <div
+                key={item.id}
+                onClick={() => !isSelect && addDeficit(index)}
+                className={`bg-white rounded-2xl shadow-sm p-4 select-none transition-transform ${
+                  isSelect ? '' : 'cursor-pointer active:scale-98'
+                } ${
+                  (isSelect ? isLow : item.deficit > 0) ? 'border-2 border-red-300' : 'border-2 border-transparent'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0 mr-3">
+                    <p className="font-bold text-gray-800 text-base leading-snug">{item.name}</p>
+                    {isSelect ? (
+                      isLow && (
+                        <p className="text-xs text-red-500 font-bold mt-0.5">⚠️ 総務課へ報告してください。</p>
+                      )
+                    ) : (
+                      <p className="text-xs text-gray-400 mt-0.5">定数: {item.standardStock}</p>
+                    )}
+                  </div>
+
+                  <div
+                    className="flex items-center gap-3"
+                    onClick={e => e.stopPropagation()}
                   >
-                    ＋
-                  </button>
+                    {isSelect ? (
+                      <select
+                        value={selectValue}
+                        onChange={e => {
+                          const val = Number(e.target.value);
+                          setItems(prev =>
+                            prev.map((it, i) =>
+                              i === index ? { ...it, deficit: it.standardStock - val } : it
+                            )
+                          );
+                        }}
+                        className={`text-2xl font-bold tabular-nums border rounded-xl px-3 py-1 outline-none ${
+                          isLow ? 'text-red-500 border-red-400 bg-red-50' : 'text-gray-700 border-gray-300'
+                        }`}
+                      >
+                        {Array.from({ length: item.standardStock + 1 }, (_, i) => i).map(n => (
+                          <option key={n} value={n}>{n}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => reduceDeficit(index)}
+                          disabled={item.deficit === 0}
+                          className="w-10 h-10 rounded-full bg-gray-100 text-gray-600 text-xl font-bold flex items-center justify-center active:bg-gray-200 disabled:opacity-30 transition-colors"
+                        >
+                          ＋
+                        </button>
 
-                  <span className={`w-12 text-center text-2xl font-bold tabular-nums ${
-                    item.deficit > 0 ? 'text-red-500' : 'text-gray-300'
-                  }`}>
-                    {item.deficit > 0 ? `−${item.deficit}` : '−'}
-                  </span>
+                        <span className={`w-12 text-center text-2xl font-bold tabular-nums ${
+                          item.deficit > 0 ? 'text-red-500' : 'text-gray-300'
+                        }`}>
+                          {item.deficit > 0 ? `−${item.deficit}` : '−'}
+                        </span>
 
-                  <button
-                    onClick={() => addDeficit(index)}
-                    className="w-10 h-10 rounded-full bg-red-50 text-red-500 text-xl font-bold flex items-center justify-center active:bg-red-100 transition-colors"
-                  >
-                    −
-                  </button>
+                        <button
+                          onClick={() => addDeficit(index)}
+                          className="w-10 h-10 rounded-full bg-red-50 text-red-500 text-xl font-bold flex items-center justify-center active:bg-red-100 transition-colors"
+                        >
+                          −
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <p className="text-center text-xs text-gray-400 mt-4">

@@ -150,6 +150,8 @@ export default function CategoryPage({
   const [y, m, d] = selectedDate.split('-').map(Number);
   const dow = new Date(y, m - 1, d).getDay();
   const dateLabel = `${m}/${d}（${'日月火水木金土'[dow]}）`;
+  // 月末の夜勤 = 夜勤明けが翌月1日。救急カート薬剤チェック表の印刷を促す
+  const isMonthEndNight = isDaily && shift === 'night' && new Date(y, m - 1, d + 1).getDate() === 1;
 
   // Filter categories by mode and (for daily) by shift applicability
   const visibleCategories = categories.filter(cat => {
@@ -194,6 +196,18 @@ export default function CategoryPage({
       </div>
 
       <div className="flex-1 p-4 overflow-y-auto">
+        {isMonthEndNight && (
+          <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 mb-4 flex gap-3">
+            <span className="text-2xl shrink-0">🖨️</span>
+            <div>
+              <p className="font-bold text-amber-800">本日は月末の夜勤です</p>
+              <p className="text-sm text-amber-700 mt-1">
+                夜勤明け（{m === 12 ? 1 : m + 1}月1日）に、救急カートの薬剤チェック表を印刷してください。
+              </p>
+            </div>
+          </div>
+        )}
+
         {isDaily && dailyCategories.length > 0 && (
           <>
             <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">毎日チェック</h2>

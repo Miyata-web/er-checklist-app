@@ -125,14 +125,20 @@ function GroupRow({ group, isOpen, onToggle }: {
         )}
       </div>
 
-      {/* 不足項目インライン */}
+      {/* 不足項目インライン（同名薬剤は合算） */}
       {hasDone && !isOpen && group.hasDeficit && (
         <div className="mt-0.5 pl-2">
-          {group.records.filter(r => r.diff < 0).map(r => (
-            <p key={r.recordId} className="text-xs text-red-500">
-              {r.itemName} <span className="font-bold">{r.diff}</span>
-            </p>
-          ))}
+          {(() => {
+            const byName = new Map<string, number>();
+            group.records.filter(r => r.diff < 0).forEach(r => {
+              byName.set(r.itemName, (byName.get(r.itemName) ?? 0) + r.diff);
+            });
+            return Array.from(byName.entries()).map(([name, diff]) => (
+              <p key={name} className="text-xs text-red-500">
+                {name} <span className="font-bold">{diff}</span>
+              </p>
+            ));
+          })()}
         </div>
       )}
 
@@ -218,6 +224,43 @@ function ShiftSection({ label, data, color }: {
   );
 }
 
+function CombinedSection({ dayData, nightData }: { dayData: ShiftData; nightData: ShiftData }) {
+  const summaries = HISTORY_GROUPS.flatMap(g => {
+    const dayRecords   = dayData.groups.find(dg => dg.groupId === g.id)?.records ?? [];
+    const nightRecords = nightData.groups.find(ng => ng.groupId === g.id)?.records ?? [];
+    const allRecords   = [...dayRecords, ...nightRecords];
+    if (allRecords.length === 0) return [];
+
+    const byName = new Map<string, number>();
+    allRecords.forEach(r => {
+      byName.set(r.itemName, (byName.get(r.itemName) ?? 0) + r.diff);
+    });
+
+    const deficits = Array.from(byName.entries()).filter(([, d]) => d < 0);
+    if (deficits.length === 0) return [];
+
+    return [{ groupId: g.id, label: g.label, deficits }];
+  });
+
+  if (summaries.length === 0) return null;
+
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-100">
+      <p className="text-xs font-bold text-gray-500 mb-2">📊 1日合計</p>
+      {summaries.map(s => (
+        <div key={s.groupId} className="mb-2 last:mb-0">
+          <p className="text-xs font-bold text-gray-400 mb-0.5">{s.label}</p>
+          {s.deficits.map(([name, diff]) => (
+            <p key={name} className="text-xs text-red-500 pl-2">
+              {name} <span className="font-bold">{diff}</span>
+            </p>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function HistoryPage({ records, groupId, shift, selectedDate, confirmations, onConfirm, onBack }: Props) {
   const group   = groupId ? HISTORY_GROUPS.find(g => g.id === groupId) : undefined;
   const title   = group ? `${group.label} 履歴` : 'チェック履歴';
@@ -276,6 +319,7 @@ export default function HistoryPage({ records, groupId, shift, selectedDate, con
                   <div className="w-px bg-gray-100 shrink-0" />
                   <ShiftSection label="🌙 夜勤" data={day.night} color="indigo" />
                 </div>
+                <CombinedSection dayData={day.day} nightData={day.night} />
               </div>
             ))}
           </div>
