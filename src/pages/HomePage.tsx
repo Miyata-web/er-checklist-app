@@ -1,15 +1,20 @@
-import { businessDateString, formatBusinessDateJP } from '../utils/today';
+import RefreshButton from '../components/RefreshButton';
 
 interface Props {
   onSelectDaily: () => void;
   onSelectMonthly: () => void;
+  onRefresh: () => Promise<boolean>;
 }
 
-export default function HomePage({ onSelectDaily, onSelectMonthly }: Props) {
-  const dateStr = formatBusinessDateJP(businessDateString());
+export default function HomePage({ onSelectDaily, onSelectMonthly, onRefresh }: Props) {
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日（${'日月火水木金土'[now.getDay()]}）`;
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
+    <div className="relative min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
+      <div className="absolute top-4 right-4">
+        <RefreshButton onRefresh={onRefresh} />
+      </div>
       <div className="w-full max-w-sm">
         <div className="text-center mb-10">
           <h1 className="text-2xl font-bold text-gray-800 mb-1">院内チェックリスト</h1>

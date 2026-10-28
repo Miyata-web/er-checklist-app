@@ -6,6 +6,7 @@ import {
 } from '../store/useStore';
 import { HISTORY_GROUPS } from '../store/historyGroups';
 import type { HistoryGroup } from '../store/historyGroups';
+import RefreshButton from '../components/RefreshButton';
 
 export type CategoryPageMode = 'daily' | 'monthly';
 
@@ -21,6 +22,7 @@ interface Props {
   onBack: () => void;
   onGoHistory: (groupId: string) => void;
   onGoAdmin: () => void;
+  onRefresh: () => Promise<boolean>;
 }
 
 type GroupStatus = 'none' | 'deficit' | 'ok' | 'confirmed';
@@ -143,6 +145,7 @@ export default function CategoryPage({
   onBack,
   onGoHistory,
   onGoAdmin,
+  onRefresh,
 }: Props) {
   const isDaily = mode === 'daily';
 
@@ -186,6 +189,7 @@ export default function CategoryPage({
           <h1 className="text-lg font-bold">{headerTitle}</h1>
           <p className="text-xs opacity-80">{headerSub}</p>
         </div>
+        <RefreshButton onRefresh={onRefresh} tone="light" />
         <button
           onClick={onGoAdmin}
           className="flex flex-col items-center gap-0.5 opacity-90 active:opacity-70"

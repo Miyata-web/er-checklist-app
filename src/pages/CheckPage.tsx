@@ -6,7 +6,6 @@ interface ItemState {
   name: string;
   standardStock: number;
   deficit: number;
-  inputType?: 'select';
 }
 
 interface Props {
@@ -14,40 +13,43 @@ interface Props {
   selectedDate: string;
   category: Category;
   initialDeficits: Record<string, number>;
+  checkerName: string;
   onComplete: (records: CheckRecord[]) => void;
   onInterrupt: (items: { itemId: string; deficit: number }[]) => void;
   onBack: () => void;
 }
 
-export default function CheckPage({ shift, selectedDate, category, initialDeficits, onComplete, onInterrupt, onBack }: Props) {
+export default function CheckPage({ shift, selectedDate, category, initialDeficits, checkerName, onComplete, onInterrupt, onBack }: Props) {
   const [items, setItems] = useState<ItemState[]>(
     category.items.map(item => ({
       id           : item.id,
       name         : item.name,
       standardStock: item.standardStock,
       deficit      : initialDeficits[item.id] ?? 0,
-      inputType    : item.inputType,
     }))
   );
   const [submitted, setSubmitted] = useState(false);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editValue, setEditValue] = useState('');
 
   const shiftLabel = shift === 'day' ? '☀️ 日勤' : '🌙 夜勤';
 
-  const addDeficit = (index: number) => {
-    setItems(prev =>
-      prev.map((item, i) =>
-        i === index ? { ...item, deficit: item.deficit + 1 } : item
-      )
-    );
+  const startEdit = (index: number) => {
+    setEditingIndex(index);
+    setEditValue(String(items[index].standardStock - items[index].deficit));
   };
 
-  const reduceDeficit = (index: number) => {
-    setItems(prev =>
-      prev.map((item, i) =>
-        i === index ? { ...item, deficit: Math.max(0, item.deficit - 1) } : item
-      )
-    );
+  const commitEdit = (index: number) => {
+    const parsed = parseInt(editValue, 10);
+    if (!isNaN(parsed)) {
+      const clamped = Math.min(Math.max(0, parsed), items[index].standardStock);
+      setItems(prev => prev.map((item, i) =>
+        i === index ? { ...item, deficit: item.standardStock - clamped } : item
+      ));
+    }
+    setEditingIndex(null);
   };
+
 
   const handleComplete = () => {
     const newRecords: CheckRecord[] = items.map(item => ({
@@ -62,6 +64,7 @@ export default function CheckPage({ shift, selectedDate, category, initialDefici
       standardStock: item.standardStock,
       diff         : -item.deficit,
       timestamp    : new Date().toISOString(),
+      checkerName,
     }));
     setSubmitted(true);
     onComplete(newRecords);
@@ -105,7 +108,7 @@ export default function CheckPage({ shift, selectedDate, category, initialDefici
           <button onClick={onBack} className="text-white text-xl px-1">←</button>
           <div>
             <h1 className="text-lg font-bold">{category.name}</h1>
-            <p className="text-xs opacity-80">{shiftLabel}　カードまたは[−]で不足を記録</p>
+            <p className="text-xs opacity-80">{shiftLabel}　数字をタップして在庫数を入力</p>
           </div>
         </div>
       </div>
@@ -119,89 +122,51 @@ export default function CheckPage({ shift, selectedDate, category, initialDefici
       {/* 項目リスト */}
       <div className="flex-1 p-4 overflow-y-auto">
         <div className="flex flex-col gap-3">
-          {items.map((item, index) => {
-            const isSelect = item.inputType === 'select';
-            const selectValue = item.standardStock - item.deficit; // 現在の残量値
-            const isLow = isSelect && selectValue <= 5;
+          {items.map((item, index) => (
+            <div
+              key={item.id}
+              className={`bg-white rounded-2xl shadow-sm p-4 select-none ${
+                item.deficit > 0 ? 'border-2 border-red-300' : 'border-2 border-transparent'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex-1 min-w-0 mr-3">
+                  <p className="font-bold text-gray-800 text-base leading-snug">{item.name}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">定数: {item.standardStock}</p>
+                </div>
 
-            return (
-              <div
-                key={item.id}
-                onClick={() => !isSelect && addDeficit(index)}
-                className={`bg-white rounded-2xl shadow-sm p-4 select-none transition-transform ${
-                  isSelect ? '' : 'cursor-pointer active:scale-98'
-                } ${
-                  (isSelect ? isLow : item.deficit > 0) ? 'border-2 border-red-300' : 'border-2 border-transparent'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex-1 min-w-0 mr-3">
-                    <p className="font-bold text-gray-800 text-base leading-snug">{item.name}</p>
-                    {isSelect ? (
-                      isLow && (
-                        <p className="text-xs text-red-500 font-bold mt-0.5">⚠️ 総務課へ報告してください。</p>
-                      )
-                    ) : (
-                      <p className="text-xs text-gray-400 mt-0.5">定数: {item.standardStock}</p>
-                    )}
-                  </div>
-
-                  <div
-                    className="flex items-center gap-3"
-                    onClick={e => e.stopPropagation()}
-                  >
-                    {isSelect ? (
-                      <select
-                        value={selectValue}
-                        onChange={e => {
-                          const val = Number(e.target.value);
-                          setItems(prev =>
-                            prev.map((it, i) =>
-                              i === index ? { ...it, deficit: it.standardStock - val } : it
-                            )
-                          );
-                        }}
-                        className={`text-2xl font-bold tabular-nums border rounded-xl px-3 py-1 outline-none ${
-                          isLow ? 'text-red-500 border-red-400 bg-red-50' : 'text-gray-700 border-gray-300'
-                        }`}
-                      >
-                        {Array.from({ length: item.standardStock + 1 }, (_, i) => i).map(n => (
-                          <option key={n} value={n}>{n}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <>
-                        <button
-                          onClick={() => reduceDeficit(index)}
-                          disabled={item.deficit === 0}
-                          className="w-10 h-10 rounded-full bg-gray-100 text-gray-600 text-xl font-bold flex items-center justify-center active:bg-gray-200 disabled:opacity-30 transition-colors"
-                        >
-                          ＋
-                        </button>
-
-                        <span className={`w-12 text-center text-2xl font-bold tabular-nums ${
-                          item.deficit > 0 ? 'text-red-500' : 'text-gray-300'
-                        }`}>
-                          {item.deficit > 0 ? `−${item.deficit}` : '−'}
-                        </span>
-
-                        <button
-                          onClick={() => addDeficit(index)}
-                          className="w-10 h-10 rounded-full bg-red-50 text-red-500 text-xl font-bold flex items-center justify-center active:bg-red-100 transition-colors"
-                        >
-                          −
-                        </button>
-                      </>
-                    )}
-                  </div>
+                <div onClick={e => e.stopPropagation()}>
+                  {editingIndex === index ? (
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={editValue}
+                      onChange={e => setEditValue(e.target.value)}
+                      onBlur={() => commitEdit(index)}
+                      onKeyDown={e => e.key === 'Enter' && commitEdit(index)}
+                      onFocus={e => e.target.select()}
+                      autoFocus
+                      className="w-16 text-center text-2xl font-bold tabular-nums text-red-500 border-b-2 border-red-400 bg-transparent outline-none"
+                    />
+                  ) : (
+                    <span
+                      onClick={() => startEdit(index)}
+                      className={`block w-16 text-center text-2xl font-bold tabular-nums underline decoration-dotted cursor-pointer ${
+                        item.deficit > 0 ? 'text-red-500' : 'text-gray-400'
+                      }`}
+                    >
+                      {item.standardStock - item.deficit}
+                    </span>
+                  )}
                 </div>
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
 
         <p className="text-center text-xs text-gray-400 mt-4">
-          カードをタップまたは[−]で不足を記録、[＋]で取り消し
+          数字をタップして現在の在庫数を直接入力してください
         </p>
       </div>
 

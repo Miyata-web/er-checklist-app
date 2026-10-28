@@ -4,6 +4,7 @@ import { useCategories, useRecords, useDrafts, useConfirmations, getTodayString 
 import { gasClient } from './api/gasClient';
 import HomePage     from './pages/HomePage';
 import ShiftPage    from './pages/ShiftPage';
+import NamePage     from './pages/NamePage';
 import DatePage     from './pages/DatePage';
 import CategoryPage from './pages/CategoryPage';
 import CheckPage    from './pages/CheckPage';
@@ -13,10 +14,12 @@ import AdminPage    from './pages/AdminPage';
 type Page =
   | { name: 'home' }
   | { name: 'shift' }
-  | { name: 'date'; shift: Shift }
-  | { name: 'category'; shift: Shift; selectedDate: string }
-  | { name: 'category-monthly' }
-  | { name: 'check'; shift: Shift; selectedDate: string; category: Category; initialDeficits: Record<string, number> }
+  | { name: 'name'; shift: Shift }
+  | { name: 'name-monthly' }
+  | { name: 'date'; shift: Shift; checkerName: string }
+  | { name: 'category'; shift: Shift; selectedDate: string; checkerName: string }
+  | { name: 'category-monthly'; checkerName: string }
+  | { name: 'check'; shift: Shift; selectedDate: string; category: Category; initialDeficits: Record<string, number>; checkerName: string }
   | { name: 'history'; groupId: string; shift: Shift; selectedDate: string }
   | { name: 'admin' };
 
@@ -24,12 +27,17 @@ const GAS_ENABLED = Boolean(import.meta.env.VITE_GAS_URL && !import.meta.env.VIT
 
 export default function App() {
   const [page, setPage] = useState<Page>({ name: 'home' });
-  const { categories, saveCategories }    = useCategories();
-  const { records, addRecords }           = useRecords();
-  const { drafts, saveDraft, clearDraft } = useDrafts();
-  const { confirmations, addConfirmation } = useConfirmations();
+  const { categories, saveCategories, refresh: refreshCategories }       = useCategories();
+  const { records, addRecords, refresh: refreshRecords }                  = useRecords();
+  const { drafts, saveDraft, clearDraft }                                 = useDrafts();
+  const { confirmations, addConfirmation, refresh: refreshConfirmations } = useConfirmations();
 
-  const handleCategorySelect = (shift: Shift, selectedDate: string, category: Category) => {
+  const refreshAll = async () => {
+    const results = await Promise.all([refreshCategories(), refreshRecords(), refreshConfirmations()]);
+    return results.every(Boolean);
+  };
+
+  const handleCategorySelect = (shift: Shift, selectedDate: string, category: Category, checkerName: string) => {
     const initialDeficits: Record<string, number> = {};
 
     const draft = drafts.find(
@@ -51,7 +59,7 @@ export default function App() {
       }
     }
 
-    setPage({ name: 'check', shift, selectedDate, category, initialDeficits });
+    setPage({ name: 'check', shift, selectedDate, category, initialDeficits, checkerName });
   };
 
   const handleCheckComplete = async (newRecords: CheckRecord[]) => {
@@ -95,7 +103,8 @@ export default function App() {
     return (
       <HomePage
         onSelectDaily={() => setPage({ name: 'shift' })}
-        onSelectMonthly={() => setPage({ name: 'category-monthly' })}
+        onSelectMonthly={() => setPage({ name: 'name-monthly' })}
+        onRefresh={refreshAll}
       />
     );
   }
@@ -103,7 +112,26 @@ export default function App() {
   if (page.name === 'shift') {
     return (
       <ShiftPage
-        onSelectShift={shift => setPage({ name: 'date', shift })}
+        onSelectShift={shift => setPage({ name: 'name', shift })}
+        onBack={() => setPage({ name: 'home' })}
+      />
+    );
+  }
+
+  if (page.name === 'name') {
+    return (
+      <NamePage
+        shift={page.shift}
+        onNext={checkerName => setPage({ name: 'date', shift: page.shift, checkerName })}
+        onBack={() => setPage({ name: 'shift' })}
+      />
+    );
+  }
+
+  if (page.name === 'name-monthly') {
+    return (
+      <NamePage
+        onNext={checkerName => setPage({ name: 'category-monthly', checkerName })}
         onBack={() => setPage({ name: 'home' })}
       />
     );
@@ -113,8 +141,8 @@ export default function App() {
     return (
       <DatePage
         shift={page.shift}
-        onSelectDate={date => setPage({ name: 'category', shift: page.shift, selectedDate: date })}
-        onBack={() => setPage({ name: 'shift' })}
+        onSelectDate={date => setPage({ name: 'category', shift: page.shift, selectedDate: date, checkerName: page.checkerName })}
+        onBack={() => setPage({ name: 'name', shift: page.shift })}
       />
     );
   }
@@ -129,10 +157,11 @@ export default function App() {
         records={records}
         drafts={drafts}
         confirmations={confirmations}
-        onSelectCategory={cat => handleCategorySelect(page.shift, page.selectedDate, cat)}
-        onBack={() => setPage({ name: 'date', shift: page.shift })}
+        onSelectCategory={cat => handleCategorySelect(page.shift, page.selectedDate, cat, page.checkerName)}
+        onBack={() => setPage({ name: 'date', shift: page.shift, checkerName: page.checkerName })}
         onGoHistory={groupId => setPage({ name: 'history', groupId, shift: page.shift, selectedDate: page.selectedDate })}
         onGoAdmin={() => setPage({ name: 'admin' })}
+        onRefresh={refreshAll}
       />
     );
   }
@@ -148,10 +177,11 @@ export default function App() {
         records={records}
         drafts={drafts}
         confirmations={confirmations}
-        onSelectCategory={cat => handleCategorySelect('day', today, cat)}
-        onBack={() => setPage({ name: 'home' })}
+        onSelectCategory={cat => handleCategorySelect('day', today, cat, page.checkerName)}
+        onBack={() => setPage({ name: 'name-monthly' })}
         onGoHistory={() => {}}
         onGoAdmin={() => setPage({ name: 'admin' })}
+        onRefresh={refreshAll}
       />
     );
   }
@@ -159,8 +189,8 @@ export default function App() {
   if (page.name === 'check') {
     const isDaily = page.category.frequency === 'daily1' || page.category.frequency === 'daily2';
     const backTarget = isDaily
-      ? { name: 'category' as const, shift: page.shift, selectedDate: page.selectedDate }
-      : { name: 'category-monthly' as const };
+      ? { name: 'category' as const, shift: page.shift, selectedDate: page.selectedDate, checkerName: page.checkerName }
+      : { name: 'category-monthly' as const, checkerName: page.checkerName };
 
     return (
       <CheckPage
@@ -168,6 +198,7 @@ export default function App() {
         selectedDate={page.selectedDate}
         category={page.category}
         initialDeficits={page.initialDeficits}
+        checkerName={page.checkerName}
         onComplete={handleCheckComplete}
         onInterrupt={items => {
           saveDraft({
@@ -188,12 +219,14 @@ export default function App() {
     return (
       <HistoryPage
         records={records}
+        categories={categories}
         groupId={page.groupId}
         shift={page.shift}
         selectedDate={page.selectedDate}
         confirmations={confirmations}
         onConfirm={addConfirmation}
-        onBack={() => setPage({ name: 'category', shift: page.shift, selectedDate: page.selectedDate })}
+        onRefresh={refreshAll}
+        onBack={() => setPage({ name: 'category', shift: page.shift, selectedDate: page.selectedDate, checkerName: '' })}
       />
     );
   }
@@ -202,6 +235,7 @@ export default function App() {
     return (
       <AdminPage
         categories={categories}
+        records={records}
         onSave={handleSaveCategories}
         onBack={() => setPage({ name: 'home' })}
         gasEnabled={GAS_ENABLED}

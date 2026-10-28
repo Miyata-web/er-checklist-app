@@ -21,7 +21,7 @@ export interface CheckItem {
   id: string;
   name: string;
   standardStock: number;
-  inputType?: 'select';
+  isControlled?: boolean;
 }
 
 export interface Category {
@@ -30,6 +30,7 @@ export interface Category {
   frequency: Frequency;
   items: CheckItem[];
   shiftFilter?: Shift[];
+  requiresApproval?: boolean;
 }
 
 export interface RecordItem {
@@ -52,6 +53,7 @@ export interface CheckRecord {
   standardStock: number;
   diff: number;
   timestamp: string;
+  checkerName: string;
 }
 
 export interface DailyRecord {

@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import type { Shift } from '../types';
-import { businessNow, businessDateString, formatBusinessDateJP } from '../utils/today';
 
 interface Props {
   shift: Shift;
@@ -9,12 +8,16 @@ interface Props {
 }
 
 function offsetDate(offset: number): string {
-  const d = businessNow();
+  const d = new Date();
   d.setDate(d.getDate() + offset);
-  return businessDateString(d);
+  return d.toISOString().slice(0, 10);
 }
 
-const formatDateJP = formatBusinessDateJP;
+function formatDateJP(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dow = new Date(y, m - 1, d).getDay();
+  return `${y}年${m}月${d}日（${'日月火水木金土'[dow]}）`;
+}
 
 function offsetLabel(offset: number): string {
   if (offset === 0)  return '今日';
@@ -69,7 +72,9 @@ export default function DatePage({ shift, onSelectDate, onBack }: Props) {
           </button>
         </div>
 
-        <div className="mb-10" />
+        <p className="text-xs text-gray-400 mb-10 text-center">
+          ※ 夜勤が日付を跨ぐ場合は「昨日」を選択してください
+        </p>
 
         <button
           onClick={() => onSelectDate(selectedDate)}

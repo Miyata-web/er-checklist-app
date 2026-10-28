@@ -2,12 +2,20 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "er-checklist-app",
   "compatibility_date": "2026-04-19",
+  "main": "src/worker.ts",
   "observability": {
     "enabled": true
   },
   "assets": {
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    "binding": "ASSETS"
   },
+  "kv_namespaces": [
+    {
+      "binding": "CHECKLIST_DATA",
+      "id": "a3c15f479bd94de7b7ebec767f83c622"
+    }
+  ],
   "compatibility_flags": [
     "nodejs_compat"
   ]

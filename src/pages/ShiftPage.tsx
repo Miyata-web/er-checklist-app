@@ -1,5 +1,4 @@
 import type { Shift } from '../types';
-import { businessDateString, formatBusinessDateJP } from '../utils/today';
 
 interface Props {
   onSelectShift: (shift: Shift) => void;
@@ -7,7 +6,8 @@ interface Props {
 }
 
 export default function ShiftPage({ onSelectShift, onBack }: Props) {
-  const dateStr = formatBusinessDateJP(businessDateString());
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日（${'日月火水木金土'[now.getDay()]}）`;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
