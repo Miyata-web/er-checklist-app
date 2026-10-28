@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import type { Category, CheckRecord, Shift } from './types';
 import { useCategories, useRecords, useDrafts, useConfirmations, getTodayString } from './store/useStore';
 import { gasClient } from './api/gasClient';
@@ -27,6 +27,11 @@ const GAS_ENABLED = Boolean(import.meta.env.VITE_GAS_URL && !import.meta.env.VIT
 
 export default function App() {
   const [page, setPage] = useState<Page>({ name: 'home' });
+
+  // 画面切り替え時は前の画面のスクロール位置を引き継がず、先頭から表示する
+  useLayoutEffect(() => {
+    window.scrollTo(0, 0);
+  }, [page]);
   const { categories, saveCategories, refresh: refreshCategories }       = useCategories();
   const { records, addRecords, refresh: refreshRecords }                  = useRecords();
   const { drafts, saveDraft, clearDraft }                                 = useDrafts();
