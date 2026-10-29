@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Category, CheckDraft, CheckRecord, GroupConfirmation, Shift } from '../types';
 import { DEFAULT_CATEGORIES } from './defaultData';
+import { cutoffDate, mergeConfirmations, mergeRecords } from './merge';
 
 const STORAGE_CATEGORIES    = 'er-checklist-categories';
 const STORAGE_RECORDS       = 'er-checklist-records';
 const STORAGE_DRAFTS        = 'er-checklist-drafts';
 const STORAGE_CONFIRMATIONS = 'er-checklist-confirmations';
 const STORAGE_VERSION       = 'er-checklist-data-version';
-const RETENTION_DAYS        = 60;
 const DATA_VERSION          = '5';
 
 // ---- ローカルストレージ helpers ----
@@ -38,6 +38,18 @@ async function apiPost(path: string, data: unknown): Promise<void> {
       body: JSON.stringify(data),
     });
   } catch { /* ignore — local is already saved */ }
+}
+// 手元の分を送ってサーバー側でマージさせ、全端末分のマージ結果を受け取る
+async function apiSync<T>(path: string, data: unknown): Promise<T | null> {
+  try {
+    const res = await fetch(`${API}/${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) return null;
+    return await res.json() as T;
+  } catch { return null; }
 }
 
 // ---- カテゴリ ----
@@ -83,9 +95,7 @@ export function useCategories() {
 
 // ---- レコード ----
 function pruneRecords(all: CheckRecord[]): CheckRecord[] {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - RETENTION_DAYS);
-  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  const cutoffStr = cutoffDate();
   return all.filter(r => r.date >= cutoffStr);
 }
 
@@ -93,45 +103,30 @@ export function useRecords() {
   const [records, setRecords] = useState<CheckRecord[]>(() =>
     pruneRecords(lsGet<CheckRecord[]>(STORAGE_RECORDS, []))
   );
-  const pendingSync = useRef(false);
+  const recordsRef = useRef(records);
 
+  useEffect(() => {
+    recordsRef.current = records;
+    lsSet(STORAGE_RECORDS, records);
+  }, [records]);
+
+  // サーバーの内容で手元を置き換えず、マージする（送信前に手元で追加した分を消さないため）
   const apply = useCallback((remote: CheckRecord[] | null): boolean => {
     if (remote === null) return false;
-    const pruned = pruneRecords(remote);
-    setRecords(pruned);
-    lsSet(STORAGE_RECORDS, pruned);
+    setRecords(prev => mergeRecords(prev, remote));
     return true;
   }, []);
 
+  // 手元の全記録を送る。未送信の分（通信失敗時など）もここで送られる
   const refresh = useCallback(
-    () => apiFetch<CheckRecord[]>('records').then(apply), [apply]);
+    () => apiSync<CheckRecord[]>('records', recordsRef.current).then(apply), [apply]);
 
-  useEffect(() => {
-    apiFetch<CheckRecord[]>('records').then(apply);
-  }, [apply]);
-
-  // ローカル変更をサーバーに書き戻し（デバウンス）
-  useEffect(() => {
-    if (pendingSync.current) return;
-    pendingSync.current = true;
-    const t = setTimeout(() => {
-      lsSet(STORAGE_RECORDS, records);
-      apiPost('records', records);
-      pendingSync.current = false;
-    }, 1000);
-    return () => { clearTimeout(t); pendingSync.current = false; };
-  }, [records]);
+  useEffect(() => { refresh(); }, [refresh]);
 
   const addRecords = useCallback((newRecords: CheckRecord[]) => {
-    setRecords(prev => {
-      const filtered = prev.filter(r =>
-        !newRecords.some(nr =>
-          nr.date === r.date && nr.shift === r.shift && nr.categoryId === r.categoryId
-        )
-      );
-      return [...filtered, ...newRecords];
-    });
-  }, []);
+    setRecords(prev => mergeRecords(prev, newRecords));
+    apiSync<CheckRecord[]>('records', newRecords).then(apply);
+  }, [apply]);
 
   return { records, addRecords, refresh };
 }
@@ -167,36 +162,29 @@ export function useConfirmations() {
   const [confirmations, setConfirmations] = useState<GroupConfirmation[]>(() =>
     lsGet<GroupConfirmation[]>(STORAGE_CONFIRMATIONS, [])
   );
+  const confirmationsRef = useRef(confirmations);
+
+  useEffect(() => {
+    confirmationsRef.current = confirmations;
+    lsSet(STORAGE_CONFIRMATIONS, confirmations);
+  }, [confirmations]);
 
   const apply = useCallback((remote: GroupConfirmation[] | null): boolean => {
     if (remote === null) return false;
-    if (remote.length > 0) {
-      setConfirmations(remote);
-      lsSet(STORAGE_CONFIRMATIONS, remote);
-    }
+    setConfirmations(prev => mergeConfirmations(prev, remote));
     return true;
   }, []);
 
   const refresh = useCallback(
-    () => apiFetch<GroupConfirmation[]>('confirmations').then(apply), [apply]);
+    () => apiSync<GroupConfirmation[]>('confirmations', confirmationsRef.current).then(apply), [apply]);
 
-  useEffect(() => {
-    apiFetch<GroupConfirmation[]>('confirmations').then(apply);
-  }, [apply]);
-
-  useEffect(() => {
-    lsSet(STORAGE_CONFIRMATIONS, confirmations);
-    apiPost('confirmations', confirmations);
-  }, [confirmations]);
+  useEffect(() => { refresh(); }, [refresh]);
 
   const addConfirmation = useCallback((groupId: string, date: string, shift: Shift) => {
-    setConfirmations(prev => {
-      const filtered = prev.filter(
-        c => !(c.groupId === groupId && c.date === date && c.shift === shift)
-      );
-      return [...filtered, { groupId, date, shift, timestamp: new Date().toISOString() }];
-    });
-  }, []);
+    const confirmation = { groupId, date, shift, timestamp: new Date().toISOString() };
+    setConfirmations(prev => mergeConfirmations(prev, [confirmation]));
+    apiSync<GroupConfirmation[]>('confirmations', [confirmation]).then(apply);
+  }, [apply]);
 
   return { confirmations, addConfirmation, refresh };
 }

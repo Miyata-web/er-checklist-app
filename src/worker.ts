@@ -1,3 +1,6 @@
+import { mergeConfirmations, mergeRecords } from './store/merge';
+import type { CheckRecord, GroupConfirmation } from './types';
+
 interface Env {
   ASSETS: Fetcher;
   CHECKLIST_DATA: KVNamespace;
@@ -34,8 +37,20 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
 
   if (request.method === 'POST') {
     const body = await request.json();
-    await env.CHECKLIST_DATA.put(key, JSON.stringify(body));
-    return json({ ok: true });
+    // categories は管理画面からの全体保存なので上書き。
+    // records / confirmations は端末ごとに手元の分しか持っていないため、上書きせずマージする。
+    if (key === 'categories') {
+      await env.CHECKLIST_DATA.put(key, JSON.stringify(body));
+      return json({ ok: true });
+    }
+    if (!Array.isArray(body)) return json({ error: 'array expected' }, 400);
+    const stored = await env.CHECKLIST_DATA.get(key);
+    const current = stored ? JSON.parse(stored) : [];
+    const merged = key === 'records'
+      ? mergeRecords(current as CheckRecord[], body as CheckRecord[])
+      : mergeConfirmations(current as GroupConfirmation[], body as GroupConfirmation[]);
+    await env.CHECKLIST_DATA.put(key, JSON.stringify(merged));
+    return json(merged);
   }
 
   return json({ error: 'method not allowed' }, 405);
